@@ -18,32 +18,31 @@
  */
 package org.neo4j.graphalgo.core.utils;
 
-import org.neo4j.helpers.Exceptions;
-import org.neo4j.kernel.internal.GraphDatabaseAPI;
+public interface RenamesCurrentThread {
 
-import java.util.concurrent.Callable;
-
-public abstract class StatementTask<T, E extends Exception> extends StatementApi implements RenamingRunnable, Callable<T>, StatementApi.Function<T, E> {
-
-    protected StatementTask(GraphDatabaseAPI api) {
-        super(api);
+    default String threadName() {
+        return getClass().getSimpleName() + "-" + System.identityHashCode(this);
     }
 
-    @Override
-    public T call() throws E {
-        return runAndReturn();
-    }
+    static Runnable renameThread(final String newThreadName) {
+        Thread currentThread = Thread.currentThread();
+        String oldThreadName = currentThread.getName();
 
-    @Override
-    public void doRun() {
-        try {
-            runAndReturn();
-        } catch (Exception e) {
-            throw Exceptions.launderedException(e);
+        boolean renamed = false;
+        if (!oldThreadName.equals(newThreadName)) {
+            try {
+                currentThread.setName(newThreadName);
+                renamed = true;
+            } catch (SecurityException e) {
+                // failed to rename thread, proceed as usual
+            }
         }
-    }
 
-    private T runAndReturn() throws E {
-        return applyInTransaction(this);
+        final boolean finalRenamed = renamed;
+        return () -> {
+            if (finalRenamed) {
+                currentThread.setName(oldThreadName);
+            }
+        };
     }
 }

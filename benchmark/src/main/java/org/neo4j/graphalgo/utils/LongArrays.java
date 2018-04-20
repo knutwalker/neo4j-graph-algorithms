@@ -108,7 +108,7 @@ public class LongArrays {
     }
 
     static OffHeapLongArray createOffHeap(long[] values) {
-        final OffHeapLongArray array = new OffHeapLongArray(values.length, -1L, 0);
+        final OffHeapLongArray array = new OffHeapLongArray(values.length, -1L, 0, NoMemoryTracker.INSTANCE);
         for (int i = 0; i < values.length; i++) {
             long value = values[i];
             if (value >= 0) {
