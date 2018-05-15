@@ -64,7 +64,16 @@ public abstract class GraphFactory {
         this.log = setup.log;
         this.progressLogger = progressLogger(log, setup.logMillis, TimeUnit.MILLISECONDS);
         dimensions = new GraphDimensions(api, setup).call();
-        progress = new ApproximatedImportProgress(
+        progress = importProgress(progressLogger, dimensions, setup);
+    }
+
+    public abstract Graph build();
+
+    protected ImportProgress importProgress(
+            ProgressLogger progressLogger,
+            GraphDimensions dimensions,
+            GraphSetup setup) {
+        return new ApproximatedImportProgress(
                 progressLogger,
                 setup.tracker,
                 dimensions.hugeNodeCount(),
@@ -72,8 +81,6 @@ public abstract class GraphFactory {
                 setup.loadIncoming || setup.loadAsUndirected,
                 setup.loadOutgoing || setup.loadAsUndirected);
     }
-
-    public abstract Graph build();
 
     protected IdMap loadIdMap() {
         final NodeImporter nodeImporter = new NodeImporter(
