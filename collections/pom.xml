@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>graph-algorithms-parent</artifactId>
+        <groupId>org.neo4j</groupId>
+        <version>3.3.4.0</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>graph-algorithms-collections</artifactId>
+
+    <name>Neo4j Graph Algorithms :: Collections</name>
+    <description>Efficient Graph Algorithms for Neo4j - Support Collections</description>
+
+    <properties>
+        <template.processor.incremental>true</template.processor.incremental>
+    </properties>
+
+
+    <dependencies>
+        <dependency>
+            <groupId>org.neo4j</groupId>
+            <artifactId>neo4j</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- TODO -->
+        <dependency>
+            <groupId>com.carrotsearch</groupId>
+            <artifactId>hppc</artifactId>
+            <version>0.7.3</version>
+        </dependency>
+        <dependency>
+            <groupId>com.carrotsearch</groupId>
+            <artifactId>hppc-template-processor</artifactId>
+            <version>0.7.3</version>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.carrotsearch</groupId>
+                <artifactId>hppc-template-processor</artifactId>
+                <version>0.7.3</version>
+                <executions>
+                    <execution>
+                        <id>generate-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>template-processor</goal>
+                        </goals>
+                        <configuration>
+                            <incremental>${template.processor.incremental}</incremental>
+                            <attachSources>main</attachSources>
+                            <templatesDir>${project.basedir}/src/main/templates</templatesDir>
+                            <outputDir>${project.build.directory}/generated-sources/main/java</outputDir>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>generate-test-sources</id>
+                        <phase>generate-test-sources</phase>
+                        <goals>
+                            <goal>template-processor</goal>
+                        </goals>
+                        <configuration>
+                            <incremental>${template.processor.incremental}</incremental>
+                            <attachSources>test</attachSources>
+                            <templatesDir>${project.basedir}/src/test/templates</templatesDir>
+                            <outputDir>${project.build.directory}/generated-sources/test/java</outputDir>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

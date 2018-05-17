@@ -21,6 +21,7 @@
 
     <modules>
         <module>core</module>
+        <module>collections</module>
         <module>algo</module>
         <module>tests</module>
         <module>doc</module>
