@@ -5,6 +5,7 @@ import org.neo4j.graphalgo.collections.functions.*;
 
 import java.util.Arrays;
 
+@SuppressWarnings("unchecked")
 /*! ${TemplateOptions.generatedAnnotation} !*/
 final class PagedHugeKTypeArray<KType> implements HugeKTypeArray<KType> {
 

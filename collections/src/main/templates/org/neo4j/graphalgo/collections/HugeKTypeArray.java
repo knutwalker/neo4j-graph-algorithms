@@ -4,19 +4,19 @@ import org.neo4j.graphalgo.collections.cursors.*;
 import org.neo4j.graphalgo.collections.functions.*;
 
 import java.util.Arrays;
-import java.util.function.IntToLongFunction;
+import java.util.function.IntFunction;
 
 
 /**
- * A long-indexable version of a primitive long array ({@code long[]}) that can contain more than 2 bn. elements.
+ * A long-indexable version of a primitive ${TemplateOptions.KType.Type} array ({@code ${TemplateOptions.KType.Type}[]}) that can contain more than 2 bn. elements.
  * <p>
- * It is implemented by paging of smaller long-arrays ({@code long[][]}) to support approx. 32k bn. elements.
- * If the the provided size is small enough, an optimized view of a single {@code long[]} might be used.
+ * It is implemented by paging of smaller ${TemplateOptions.KType.Type}-arrays ({@code ${TemplateOptions.KType.Type}[][]}) to support approx. 32k bn. elements.
+ * If the the provided size is small enough, an optimized view of a single {@code ${TemplateOptions.KType.Type}[]} might be used.
  * <p>
  * <ul>
  * <li>The array is of a fixed size and cannot grow or shrink dynamically.</li>
- * <li>The array is not optimized for sparseness and has a large memory overhead if the values written to it are very sparse (see {@link SparseLongArray} for a different implementation that can profit from sparse data).</li>
- * <li>The array does not support default values and returns the same default for unset values that a regular {@code long[]} does ({@code 0}).</li>
+ * <li>The array is not optimized for sparseness and has a large memory overhead if the values written to it are very sparse (see {@link Sparse${TemplateOptions.KType.BoxedType}Array} for a different implementation that can profit from sparse data).</li>
+ * <li>The array does not support default values and returns the same default for unset values that a regular {@code ${TemplateOptions.KType.Type}[]} does ({@code 0} or {@code null}).</li>
  * </ul>
  * <p>
  * <h3>Basic Usage</h3>
@@ -24,10 +24,10 @@ import java.util.function.IntToLongFunction;
  * {@code}
  * AllocationTracker tracker = ...;
  * long arraySize = 42L;
- * HugeLongArray array = HugeLongArray.newArray(arraySize, tracker);
- * array.set(13L, 37L);
- * long value = array.get(13L);
- * // value = 37L
+ * Huge${TemplateOptions.KType.BoxedType}Array array = Huge${TemplateOptions.KType.BoxedType}ArrayFactory.newArray(arraySize, tracker);
+ * array.set(13L, 37);
+ * ${TemplateOptions.KType.Type} value = array.get(13L);
+ * // value = 37
  * {@code}
  * </pre>
  *
@@ -77,7 +77,7 @@ public interface HugeKTypeArray<KType> {
     /**
      * Set all elements using the provided generator function to compute each element.
      * <p>
-     * The behavior is identical to {@link Arrays#setAll(long[], IntToLongFunction)}.
+     * The behavior is identical to {@link Arrays#setAll(Object[], IntFunction)}.
      */
     <T extends LongToKTypeFunction<? extends KType>> void setAll(T gen);
 

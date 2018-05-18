@@ -1,7 +1,5 @@
 package org.neo4j.graphalgo.collections;
 
-import org.neo4j.util.VisibleForTesting;
-
 /*! ${TemplateOptions.generatedAnnotation} !*/
 public final class HugeKTypeArrayFactory<KType> {
 

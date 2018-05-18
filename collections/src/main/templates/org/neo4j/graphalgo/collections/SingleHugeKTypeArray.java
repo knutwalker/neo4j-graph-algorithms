@@ -5,6 +5,7 @@ import org.neo4j.graphalgo.collections.functions.*;
 
 import java.util.Arrays;
 
+@SuppressWarnings("unchecked")
 /*! ${TemplateOptions.generatedAnnotation} !*/
 final class SingleHugeKTypeArray<KType> implements HugeKTypeArray<KType> {
 
@@ -30,7 +31,7 @@ final class SingleHugeKTypeArray<KType> implements HugeKTypeArray<KType> {
     private final int size;
     private /*! #if ($TemplateOptions.KTypePrimitive)
         KType[] #else !*/
-        Object[] /*! #end !*/
+            Object[] /*! #end !*/
             page;
 
     private SingleHugeKTypeArray(
@@ -38,7 +39,7 @@ final class SingleHugeKTypeArray<KType> implements HugeKTypeArray<KType> {
             /*! #if ($TemplateOptions.KTypePrimitive)
             KType[] #else !*/
             Object[] /*! #end !*/
-            page) {
+                    page) {
         this.size = size;
         this.page = page;
     }
