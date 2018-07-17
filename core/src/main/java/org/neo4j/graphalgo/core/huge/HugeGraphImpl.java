@@ -314,6 +314,9 @@ public class HugeGraphImpl implements HugeGraph {
         return consumer.found;
     }
 
+    /**
+     * O(n) !
+     */
     @Override
     public int getTarget(int nodeId, int index, Direction direction) {
         return Math.toIntExact(getTarget(
