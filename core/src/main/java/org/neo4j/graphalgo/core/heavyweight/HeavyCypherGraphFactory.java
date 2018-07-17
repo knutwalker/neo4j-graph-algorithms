@@ -387,7 +387,7 @@ public class HeavyCypherGraphFactory extends GraphFactory {
 
         NodeRowVisitor visitor = new NodeRowVisitor();
         api.execute(setup.startLabel, params(offset, batchSize)).accept(visitor);
-        idMap.buildMappedIds();
+        idMap.buildMappedIds(setup.tracker);
         return new Nodes(
                 offset,
                 visitor.rows,
