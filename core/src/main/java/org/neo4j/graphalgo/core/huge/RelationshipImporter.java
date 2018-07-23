@@ -32,7 +32,7 @@ import java.util.concurrent.BlockingQueue;
 import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfObjectArray;
 
 
-final class PerThreadRelationshipBuilder extends StatementAction {
+final class RelationshipImporter extends StatementAction {
 
     private static final int INIT_OUT = 1;
     private static final int INIT_IN = 2;
@@ -57,7 +57,7 @@ final class PerThreadRelationshipBuilder extends StatementAction {
 
     private int initStatus;
 
-    PerThreadRelationshipBuilder(
+    RelationshipImporter(
             GraphDatabaseAPI api,
             ImportProgress progress,
             AllocationTracker tracker,

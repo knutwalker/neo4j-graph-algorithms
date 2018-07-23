@@ -717,7 +717,7 @@ final class QueueingScanner extends RelationshipsScanner {
 
 final class NonQueueingScanner extends RelationshipsScanner {
 
-    private final PerThreadRelationshipBuilder builder;
+    private final RelationshipImporter builder;
 
     NonQueueingScanner(
             GraphDatabaseAPI api,
@@ -729,7 +729,7 @@ final class NonQueueingScanner extends RelationshipsScanner {
             int batchSize,
             GraphSetup setup,
             boolean loadWeights,
-            PerThreadRelationshipBuilder builder) {
+            RelationshipImporter builder) {
         super(
                 api,
                 progress,

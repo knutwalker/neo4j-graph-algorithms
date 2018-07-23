@@ -128,7 +128,7 @@ final class ParallelScanning implements Runnable {
         threads = loader.finish(batchSize);
 
         final Collection<Future<?>> jobs =
-                ParallelUtil.run(Arrays.asList(loader.builders), false, threadPool, null);
+                ParallelUtil.run(Arrays.asList(loader.importers), false, threadPool, null);
 
         int inFlight = threads * PER_THREAD_IN_FLIGHT;
         int baseQueueBatchSize = Math.max(1 << 4, Math.min(1 << 12, setup.batchSize));
@@ -169,7 +169,7 @@ final class ParallelScanning implements Runnable {
         private final HugeAdjacencyBuilder inAdjacency;
 
         private ArrayBlockingQueue<RelationshipsBatch>[] queues;
-        private PerThreadRelationshipBuilder[] builders;
+        private RelationshipImporter[] importers;
         private long[][] outDegrees;
         private long[][] inDegrees;
 
@@ -189,7 +189,7 @@ final class ParallelScanning implements Runnable {
             this.loadDegrees = loadDegrees;
             //noinspection unchecked
             queues = new ArrayBlockingQueue[threads];
-            builders = new PerThreadRelationshipBuilder[threads];
+            importers = new RelationshipImporter[threads];
             if (outAdjacency != null) {
                 outDegrees = new long[threads][];
                 tracker.add(sizeOfObjectArray(threads));
@@ -219,7 +219,7 @@ final class ParallelScanning implements Runnable {
                 tracker.add(sizeOfLongArray(numberOfElements));
             }
             HugeWeightMapBuilder threadWeights = weights.threadLocalCopy(index, numberOfElements);
-            builders[index] = new PerThreadRelationshipBuilder(
+            importers[index] = new RelationshipImporter(
                     api, progress, tracker, threadWeights, queues[index],
                     index, startId, numberOfElements, outAB, inAB);
         }
@@ -229,7 +229,7 @@ final class ParallelScanning implements Runnable {
             weights.finish(length);
             if (length < queues.length) {
                 queues = Arrays.copyOf(queues, length);
-                builders = Arrays.copyOf(builders, length);
+                importers = Arrays.copyOf(importers, length);
                 if (inDegrees != null) {
                     inDegrees = Arrays.copyOf(inDegrees, length);
                 }
@@ -290,12 +290,12 @@ final class SerialScanning implements Runnable {
     public void run() {
         weights.prepare(1, 0);
         long[][] outDegrees, inDegrees;
-        final PerThreadRelationshipBuilder builder;
+        final RelationshipImporter importer;
         try {
             HugeWeightMapBuilder threadWeights = weights.threadLocalCopy(0, nodeCount);
             outDegrees = createDegreesBuffer(nodeCount, tracker, outAdjacency);
             inDegrees = createDegreesBuffer(nodeCount, tracker, inAdjacency);
-            builder = new PerThreadRelationshipBuilder(
+            importer = new RelationshipImporter(
                     api, progress, tracker, threadWeights, null, 0, 0L, nodeCount,
                     HugeAdjacencyBuilder.threadLocal(outAdjacency, degrees(outDegrees), loadDegrees),
                     HugeAdjacencyBuilder.threadLocal(inAdjacency, degrees(inDegrees), loadDegrees));
@@ -309,7 +309,7 @@ final class SerialScanning implements Runnable {
 
         final RelationshipsScanner scanner = new NonQueueingScanner(
                 api, progress, idMap, outDegrees, inDegrees, loadDegrees,
-                queueBatchSize, setup, weights.loadsWeights(), builder);
+                queueBatchSize, setup, weights.loadsWeights(), importer);
         scanner.run();
     }
 
