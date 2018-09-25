@@ -24,7 +24,7 @@ import org.neo4j.internal.kernel.api.helpers.RelationshipSelectionCursor;
 
 import static org.neo4j.graphalgo.core.huge.AdjacencyCompression.EMPTY_LONGS;
 
-abstract class VisitRelationship {
+abstract class VisitRelationship implements AdjacencyBuilder.AdjacencyImporter {
 
     private final HugeIdMap idMap;
 
@@ -51,15 +51,7 @@ abstract class VisitRelationship {
         prevTarget = -1L;
         prevNode = -1L;
         isSorted = true;
-        if (targets.length < degree) {
-            // give leeway in case of nodes with a reference to themselves
-            // due to automatic skipping of identical targets, just adding one is enough to cover the
-            // self-reference case, as it is handled as two relationships that aren't counted by BOTH
-            // avoid repeated re-allocation for smaller degrees
-            // avoid generous over-allocation for larger degrees
-            int newSize = Math.max(32, 1 + degree);
-            targets = new long[newSize];
-        }
+        targets = AdjacencyCompression.growWithDestroy(targets, degree);
     }
 
     final void prepareNextNode(VisitRelationship other) {
@@ -88,7 +80,8 @@ abstract class VisitRelationship {
         return true;
     }
 
-    final int flush(HugeAdjacencyBuilder builder, int localId) {
+    @Override
+    public int add(int pageIndex, final HugeAdjacencyBuilder builder, final int localId) {
         return builder.applyVariableDeltaEncoding(targets, length, localId);
     }
 

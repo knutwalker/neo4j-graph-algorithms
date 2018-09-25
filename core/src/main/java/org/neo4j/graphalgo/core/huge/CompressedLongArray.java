@@ -31,17 +31,25 @@ import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfByteArray;
 
 final class CompressedLongArray {
 
+    private static final byte[] EMPTY_BYTES = new byte[0];
+
     private final AllocationTracker tracker;
     private byte[] storage;
     private int pos;
     private long lastValue;
     private int length;
 
-    CompressedLongArray(AllocationTracker tracker, long v, int maxLen) {
+    CompressedLongArray(AllocationTracker tracker, long v, int length) {
         this.tracker = tracker;
-        int initialLen = maxLen < Integer.MAX_VALUE ? maxLen : 0;
-        this.storage = new byte[initialLen];
-        tracker.add(sizeOfByteArray(initialLen));
+        if (length == Integer.MAX_VALUE) {
+            length = 0;
+        }
+        if (length > 0) {
+            tracker.add(sizeOfByteArray(length));
+            storage = new byte[length];
+        } else {
+            storage = EMPTY_BYTES;
+        }
         add(v);
     }
 
@@ -70,6 +78,7 @@ final class CompressedLongArray {
         return zigZagUncompress(storage, pos, into);
     }
 
+    @Deprecated
     long compress(
             final AdjacencyCompression compression,
             HugeAdjacencyListBuilder.Allocator allocator) {
@@ -80,6 +89,10 @@ final class CompressedLongArray {
         System.arraycopy(storage, 0, allocator.page, offset, requiredBytes);
         allocator.offset = (offset + requiredBytes);
         return address;
+    }
+
+    byte[] internalStorage() {
+        return storage;
     }
 
     void release() {

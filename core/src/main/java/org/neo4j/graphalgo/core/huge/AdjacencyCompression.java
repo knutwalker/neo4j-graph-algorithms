@@ -18,6 +18,7 @@
  */
 package org.neo4j.graphalgo.core.huge;
 
+import org.apache.lucene.util.LongsRef;
 import org.neo4j.graphalgo.core.utils.RawValues;
 
 import java.util.Arrays;
@@ -41,26 +42,57 @@ final class AdjacencyCompression {
         this.ids = EMPTY_LONGS;
     }
 
-    void copyFrom(CompressedLongArray array) {
-        if (ids.length < array.length()) {
-            ids = new long[array.length()];
+    static long[] growWithDestroy(long[] values, int newLength) {
+        if (values.length < newLength) {
+            // give leeway in case of nodes with a reference to themselves
+            // due to automatic skipping of identical targets, just adding one is enough to cover the
+            // self-reference case, as it is handled as two relationships that aren't counted by BOTH
+            // avoid repeated re-allocation for smaller degrees
+            // avoid generous over-allocation for larger degrees
+            int newSize = Math.max(32, 1 + newLength);
+            return new long[newSize];
         }
+        return values;
+    }
+
+    @Deprecated
+    void copyFrom(CompressedLongArray array) {
+        ids = growWithDestroy(ids, array.length());
         length = array.uncompress(ids);
     }
 
-    void applyDeltaEncoding() {
-        Arrays.sort(ids, 0, length);
-        length = applyDelta(ids, length);
+    static void copyFrom(LongsRef into, CompressedLongArray array) {
+        into.longs = growWithDestroy(into.longs, array.length());
+        into.length = array.uncompress(into.longs);
     }
 
+    @Deprecated
+    void applyDeltaEncoding() {
+        final LongsRef data = new LongsRef(ids, 0, length);
+        length = applyDeltaEncoding(data);
+        ids = data.longs;
+    }
+
+    static int applyDeltaEncoding(LongsRef data) {
+        Arrays.sort(data.longs, 0, data.length);
+        return data.length = applyDelta(data.longs, data.length);
+    }
+
+    @Deprecated
     int writeDegree(byte[] out, int offset) {
         return writeDegree(out, offset, length);
     }
 
+    @Deprecated
     int compress(byte[] out) {
         return encodeVLongs(ids, length, out);
     }
 
+    static int compress(LongsRef data, byte[] out) {
+        return encodeVLongs(data.longs, data.length, out);
+    }
+
+    @Deprecated
     void release() {
         ids = null;
         length = 0;
@@ -99,7 +131,7 @@ final class AdjacencyCompression {
         return RawValues.combineIntInt(out, bytes);
     }
 
-    private int applyDelta(long values[], int length) {
+    private static int applyDelta(long values[], int length) {
         long value = values[0], delta;
         int in = 1, out = 1;
         for (; in < length; ++in) {

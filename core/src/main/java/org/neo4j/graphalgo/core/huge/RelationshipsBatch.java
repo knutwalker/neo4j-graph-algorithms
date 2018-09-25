@@ -20,7 +20,7 @@ package org.neo4j.graphalgo.core.huge;
 
 import org.neo4j.graphdb.Direction;
 
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.Queue;
 
 final class RelationshipsBatch implements AutoCloseable {
     static final RelationshipsBatch SENTINEL = new RelationshipsBatch(null);
@@ -39,15 +39,27 @@ final class RelationshipsBatch implements AutoCloseable {
     long[] sourceTargetIds;
     int length;
 
-    private final ArrayBlockingQueue<RelationshipsBatch> pool;
+    private final Queue<RelationshipsBatch> pool;
     private int dataFlags;
 
-    RelationshipsBatch(final ArrayBlockingQueue<RelationshipsBatch> pool) {
+    RelationshipsBatch(final Queue<RelationshipsBatch> pool) {
         this.pool = pool;
     }
 
     void setInfo(Direction direction, int baseFlags) {
-        dataFlags = baseFlags | (direction == Direction.OUTGOING ? D_OUT : D_IN);
+        dataFlags = dataFlag(baseFlags) | (direction == Direction.OUTGOING ? D_OUT : D_IN);
+    }
+
+    long[] setData(long[] batch, int length, int nextLength) {
+        this.length = length;
+        long[] nextTargets;
+        if (sourceTargetIds == null || sourceTargetIds.length < nextLength) {
+            nextTargets = new long[nextLength];
+        } else {
+            nextTargets = sourceTargetIds;
+        }
+        sourceTargetIds = batch;
+        return nextTargets;
     }
 
     boolean isOut() {
@@ -60,6 +72,10 @@ final class RelationshipsBatch implements AutoCloseable {
 
     int dataFlag() {
         return dataFlags & D_DATA;
+    }
+
+    static int dataFlag(int flags) {
+        return flags & D_DATA;
     }
 
     @Override

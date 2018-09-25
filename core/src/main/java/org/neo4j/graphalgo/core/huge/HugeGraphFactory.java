@@ -40,7 +40,7 @@ import org.neo4j.kernel.internal.GraphDatabaseAPI;
 public final class HugeGraphFactory extends GraphFactory {
 
     // TODO: make this configurable from somewhere
-    private static final boolean LOAD_DEGREES = true;
+    private static final boolean LOAD_DEGREES = false;
 
     public HugeGraphFactory(GraphDatabaseAPI api, GraphSetup setup) {
         super(api, setup);
@@ -129,13 +129,16 @@ public final class HugeGraphFactory extends GraphFactory {
             int concurrency) {
         long pageCacheOversizing = getPageCacheOversizing();
         if (pageCacheOversizing > 0L) {
+            log.debug("[Huge] PageCache is large enough, will import graph iterating over each node.");
             return new NodesBasedImporter(
                     setup, api, dimensions, progress, tracker, idMap, weights,
                     outAdjacency, inAdjacency, threadPool, LOAD_DEGREES, concurrency);
         } else {
-            return ScanningRelationshipImporter.create(
+            log.debug("[Huge] Graph seems to be too big to fit in the PageCache, will import by relationship scanning.");
+            return ScanningRelationshipImporter2.create(
                     setup, api, dimensions, progress, tracker, idMap, weights,
                     outAdjacency, inAdjacency, threadPool, LOAD_DEGREES, concurrency);
+//                    outAdjacency, inAdjacency, threadPool, LOAD_DEGREES, 1 /* TODO revert: concurrency */);
         }
     }
 
@@ -146,15 +149,16 @@ public final class HugeGraphFactory extends GraphFactory {
             String mem = config.get(GraphDatabaseSettings.pagecache_memory);
             long maxPageCacheAvailable = ByteUnit.parse(mem);
 
-            RecordStorageEngine storageEngine = dep.resolveDependency(RecordStorageEngine.class);
-            NeoStores neoStores = storageEngine.testAccessNeoStores();
-            RelationshipStore relationshipStore = neoStores.getRelationshipStore();
+            RelationshipStore relationshipStore = dep
+                    .resolveDependency(RecordStorageEngine.class)
+                    .testAccessNeoStores()
+                    .getRelationshipStore();
             long relsInUse = relationshipStore.getNumberOfIdsInUse();
             int recordsPerPage = relationshipStore.getRecordsPerPage();
             long idsInPages = align(relsInUse, (long) recordsPerPage);
             long requiredBytes = idsInPages * (long) relationshipStore.getRecordDataSize();
 
-            return maxPageCacheAvailable - requiredBytes;
+            return -1L; //TODO: revert to: maxPageCacheAvailable - requiredBytes;
         } catch (Exception e) {
             log.warn("Could not determine sizes of page cache and relationship store", e);
             // pretend that the page cache and relationship store are perfectly balanced, as all things should be

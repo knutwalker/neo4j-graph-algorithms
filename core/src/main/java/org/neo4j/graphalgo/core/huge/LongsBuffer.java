@@ -22,9 +22,14 @@ class LongsBuffer {
 
     @FunctionalInterface
     public interface BucketConsumer {
-
         void apply(int bucketIndex, int baseFlags, long[] bucket, int bucketLength) throws InterruptedException;
     }
+
+    @FunctionalInterface
+    public interface BucketConsumer2 {
+        void apply(int bucketIndex, int baseFlags, long[] bucket, int bucketLength);
+    }
+
 
     final int baseFlags;
     private long[][] targets;
@@ -38,12 +43,13 @@ class LongsBuffer {
         }
     }
 
-    int addRelationshipWithId(int bucketIndex, long source, long target, long relId) {
-        int len = lengths[bucketIndex] += 3;
+    int addRelationshipWithId(int bucketIndex, long source, long target, long relId, long propId) {
+        int len = lengths[bucketIndex] += 4;
         long[] sourceTargetIds = targets[bucketIndex];
-        sourceTargetIds[len - 3] = source;
-        sourceTargetIds[len - 2] = target;
-        sourceTargetIds[len - 1] = relId;
+        sourceTargetIds[len - 4] = source;
+        sourceTargetIds[len - 3] = target;
+        sourceTargetIds[len - 2] = relId;
+        sourceTargetIds[len - 1] = propId;
         return len;
     }
 
@@ -65,6 +71,20 @@ class LongsBuffer {
     }
 
     void drainAndRelease(BucketConsumer consumer) throws InterruptedException {
+        if (targets != null) {
+            long[][] targets = this.targets;
+            int[] lengths = this.lengths;
+            int length = targets.length;
+            for (int i = 0; i < length; i++) {
+                consumer.apply(i, baseFlags, targets[i], lengths[i]);
+                targets[i] = null;
+            }
+            this.targets = null;
+            this.lengths = null;
+        }
+    }
+
+    void drainAndRelease2(BucketConsumer2 consumer) {
         if (targets != null) {
             long[][] targets = this.targets;
             int[] lengths = this.lengths;

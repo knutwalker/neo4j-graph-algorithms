@@ -36,6 +36,10 @@ abstract class HugeAdjacencyOffsets {
         return new PagedOffsets(pages, pageSize);
     }
 
+    static HugeAdjacencyOffsets of(long[] page) {
+        return new SinglePageOffsets(page);
+    }
+
     private static final class PagedOffsets extends HugeAdjacencyOffsets {
 
         private final int pageShift;

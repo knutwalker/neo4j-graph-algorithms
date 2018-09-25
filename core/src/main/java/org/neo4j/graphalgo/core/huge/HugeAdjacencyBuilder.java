@@ -18,6 +18,7 @@
  */
 package org.neo4j.graphalgo.core.huge;
 
+import org.apache.lucene.util.LongsRef;
 import org.neo4j.graphalgo.api.HugeGraph;
 import org.neo4j.graphalgo.api.HugeWeightMapping;
 
@@ -85,10 +86,24 @@ class HugeAdjacencyBuilder {
         return degree;
     }
 
+    @Deprecated
     final void applyVariableDeltaEncoding(CompressedLongArray array, int localId) {
         compression.copyFrom(array);
         compression.applyDeltaEncoding();
         long address = array.compress(compression, allocator);
+        offsets[localId] = address;
+        array.release();
+    }
+
+    final void applyVariableDeltaEncoding(
+            CompressedLongArray array,
+            LongsRef buffer,
+            int localId) {
+        byte[] storage = array.internalStorage();
+        AdjacencyCompression.copyFrom(buffer, array);
+        int degree = AdjacencyCompression.applyDeltaEncoding(buffer);
+        int requiredBytes = AdjacencyCompression.compress(buffer, storage);
+        long address = copyIds(storage, requiredBytes, degree);
         offsets[localId] = address;
         array.release();
     }
@@ -103,10 +118,21 @@ class HugeAdjacencyBuilder {
         return address;
     }
 
+    private synchronized long copyIds(byte[] targets, int requiredBytes, int degree) {
+        // sizeOf(degree) + compression bytes
+        long address = allocator.allocate(4 + requiredBytes);
+        int offset = allocator.offset;
+        offset = writeDegree(allocator.page, offset, degree);
+        System.arraycopy(targets, 0, allocator.page, offset, requiredBytes);
+        allocator.offset = (offset + requiredBytes);
+        return address;
+    }
+
     int degree(int localId) {
         return (int) offsets[localId];
     }
 
+    @Deprecated
     final void release() {
         compression.release();
     }

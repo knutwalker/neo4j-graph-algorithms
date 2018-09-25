@@ -69,7 +69,7 @@ final class ThreadSizing {
         }
 
         // aim for 1:1 of importer:scanner threads
-        long targetImporterThreads = targetThreads >> 1L;
+        long targetImporterThreads = Math.max(1, targetThreads >> 1L);
 
         // we batch by shifting on the node id, so the batchSize must be a power of 2
         long batchSize = BitUtil.nextHighestPowerOfTwo(ceilDiv(nodeCount, targetImporterThreads));

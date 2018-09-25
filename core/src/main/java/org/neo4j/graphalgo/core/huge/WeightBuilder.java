@@ -12,6 +12,7 @@ abstract class WeightBuilder {
 
     abstract void finish();
 
+    // TODO: check thread safety
     abstract void addWeight(
             CursorFactory cursors,
             Read read,
@@ -24,6 +25,7 @@ abstract class WeightBuilder {
             HugeWeightMapBuilder weights,
             int numPages,
             int pageSize,
+            long nodeCount,
             AllocationTracker tracker) {
         if (!weights.loadsWeights()) {
             return NoWeights.INSTANCE;
@@ -32,13 +34,14 @@ abstract class WeightBuilder {
 
         tracker.add(sizeOfObjectArray(numPages));
         HugeWeightMapBuilder[] builders = new HugeWeightMapBuilder[numPages];
-        return new PagedWeights(weights, builders, pageSize);
+        return new PagedWeights(weights, builders, nodeCount, pageSize);
     }
 
     private static final class PagedWeights extends WeightBuilder {
 
         private final HugeWeightMapBuilder weights;
         private final HugeWeightMapBuilder[] builders;
+        private final long nodeCount;
         private final int pageSize;
         private final int pageShift;
         private final long pageMask;
@@ -46,21 +49,33 @@ abstract class WeightBuilder {
         private PagedWeights(
                 HugeWeightMapBuilder weights,
                 HugeWeightMapBuilder[] builders,
+                long nodeCount,
                 int pageSize) {
             this.weights = weights;
             this.builders = builders;
+            this.nodeCount = nodeCount;
             this.pageSize = pageSize;
             this.pageShift = Integer.numberOfTrailingZeros(pageSize);
             this.pageMask = (long) (pageSize - 1);
         }
 
         void addWeightImporter(int pageIndex) {
-            builders[pageIndex] = weights.threadLocalCopy(pageIndex, pageSize);
+            int pageSize = (int) Math.min((long) this.pageSize, nodeCount - (((long) pageIndex) << pageMask));
+            if (pageSize > 0) {
+                builders[pageIndex] = weights.threadLocalCopy(pageIndex, pageSize);
+            }
         }
 
         @Override
         void finish() {
-            weights.finish(builders.length);
+            int numBuilders = 0;
+            for (; numBuilders < builders.length; numBuilders++) {
+                HugeWeightMapBuilder builder = builders[numBuilders];
+                if (builder == null) {
+                    break;
+                }
+            }
+            weights.finish(numBuilders);
         }
 
         @Override

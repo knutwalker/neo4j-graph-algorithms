@@ -6,7 +6,6 @@ import org.neo4j.graphalgo.core.utils.ImportProgress;
 import org.neo4j.graphalgo.core.utils.ParallelUtil;
 import org.neo4j.graphalgo.core.utils.StatementAction;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
-import org.neo4j.graphalgo.core.utils.paged.BitUtil;
 import org.neo4j.internal.kernel.api.CursorFactory;
 import org.neo4j.internal.kernel.api.NodeCursor;
 import org.neo4j.internal.kernel.api.Read;
@@ -71,15 +70,12 @@ final class NodesBasedImporter implements Runnable {
 
         long nodeCount = dimensions.hugeNodeCount();
         NodeQueue nodes = new NodeQueue(nodeCount);
-        int concurrency = this.concurrency;
 
-        int batchSize = BitUtil.previousPowerOfTwo((int) Math.min(
-                (long) Integer.MAX_VALUE,
-                ParallelUtil.threadSize(concurrency, nodeCount)
-        ));
-        int pages = Math.toIntExact(ParallelUtil.threadSize(batchSize, nodeCount));
+        ImportSizing sizing = ImportSizing.of(concurrency, nodeCount);
+        int batchSize = sizing.pageSize();
+        int pages = sizing.numberOfPages();
 
-        WeightBuilder weightBuilder = WeightBuilder.of(weights, pages, batchSize, tracker);
+        WeightBuilder weightBuilder = WeightBuilder.of(weights, pages, batchSize, nodeCount, tracker);
         AdjacencyBuilder outBuilder = AdjacencyBuilder.of(outAdjacency, pages, batchSize, tracker);
         AdjacencyBuilder inBuilder = AdjacencyBuilder.of(inAdjacency, pages, batchSize, tracker);
 
@@ -89,8 +85,8 @@ final class NodesBasedImporter implements Runnable {
             inBuilder.addAdjacencyImporter(tracker, loadDegrees, idx);
         }
         weightBuilder.finish();
-        outBuilder.finish();
-        inBuilder.finish();
+        outBuilder.finishPreparation();
+        inBuilder.finishPreparation();
 
         HugeRelationshipImporter[] tasks = new HugeRelationshipImporter[concurrency];
         Arrays.setAll(tasks, idx -> new HugeRelationshipImporter(

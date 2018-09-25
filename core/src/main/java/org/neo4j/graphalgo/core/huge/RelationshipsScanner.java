@@ -24,6 +24,7 @@ import org.neo4j.graphalgo.core.utils.RenamesCurrentThread;
 import org.neo4j.graphalgo.core.utils.StatementAction;
 import org.neo4j.graphalgo.core.utils.paged.BitUtil;
 import org.neo4j.graphdb.Direction;
+import org.neo4j.internal.kernel.api.RelationshipDataAccessor;
 import org.neo4j.internal.kernel.api.RelationshipScanCursor;
 import org.neo4j.kernel.api.KernelTransaction;
 import org.neo4j.kernel.impl.newapi.PartialCursors;
@@ -196,7 +197,7 @@ abstract class RelationshipsScanner extends StatementAction {
     }
 
     private void scanRelationship(RelationshipScanCursor rc, long source, long target) throws InterruptedException {
-        emit.emit(source, target, rc.relationshipReference(), this);
+        emit.emit(source, target, rc, this);
     }
 
     private void forAllRelationships(
@@ -249,10 +250,10 @@ abstract class RelationshipsScanner extends StatementAction {
         }
     }
 
-    private void batchRelationshipWithId(long source, long target, long relId, LongsBuffer buffer, Direction direction)
+    private void batchRelationshipWithId(long source, long target, RelationshipDataAccessor relData, LongsBuffer buffer, Direction direction)
     throws InterruptedException {
         int threadIndex = threadIndex(source);
-        int len = buffer.addRelationshipWithId(threadIndex, source, target, relId);
+        int len = buffer.addRelationshipWithId(threadIndex, source, target, relData.relationshipReference(), relData.propertiesReference());
         if (len >= batchSize) {
             sendRelationship(threadIndex, len, buffer, direction);
         }
@@ -399,7 +400,7 @@ abstract class RelationshipsScanner extends StatementAction {
     }
 
     private interface Emit {
-        void emit(long source, long target, long relId, RelationshipsScanner scanner) throws InterruptedException;
+        void emit(long source, long target, RelationshipDataAccessor relData, RelationshipsScanner scanner) throws InterruptedException;
 
         void emitLastBatch(RelationshipsScanner scanner) throws InterruptedException;
     }
@@ -412,10 +413,10 @@ abstract class RelationshipsScanner extends StatementAction {
         }
 
         @Override
-        public void emit(long source, long target, long relId, RelationshipsScanner scanner)
+        public void emit(long source, long target, RelationshipDataAccessor relData, RelationshipsScanner scanner)
         throws InterruptedException {
-            scanner.batchRelationshipWithId(source, target, relId, outBuffer, Direction.OUTGOING);
-            scanner.batchRelationshipWithId(target, source, relId, outBuffer, Direction.OUTGOING);
+            scanner.batchRelationshipWithId(source, target, relData, outBuffer, Direction.OUTGOING);
+            scanner.batchRelationshipWithId(target, source, relData, outBuffer, Direction.OUTGOING);
         }
 
         @Override
@@ -432,7 +433,7 @@ abstract class RelationshipsScanner extends StatementAction {
         }
 
         @Override
-        public void emit(long source, long target, long relId, RelationshipsScanner scanner)
+        public void emit(long source, long target, RelationshipDataAccessor relData, RelationshipsScanner scanner)
         throws InterruptedException {
             scanner.batchRelationship(source, target, outBuffer, Direction.OUTGOING);
             scanner.batchRelationship(target, source, outBuffer, Direction.OUTGOING);
@@ -454,9 +455,9 @@ abstract class RelationshipsScanner extends StatementAction {
         }
 
         @Override
-        public void emit(long source, long target, long relId, RelationshipsScanner scanner)
+        public void emit(long source, long target, RelationshipDataAccessor relData, RelationshipsScanner scanner)
         throws InterruptedException {
-            scanner.batchRelationshipWithId(source, target, relId, outBuffer, Direction.OUTGOING);
+            scanner.batchRelationshipWithId(source, target, relData, outBuffer, Direction.OUTGOING);
             scanner.batchRelationship(target, source, inBuffer, Direction.INCOMING);
         }
 
@@ -477,7 +478,7 @@ abstract class RelationshipsScanner extends StatementAction {
         }
 
         @Override
-        public void emit(long source, long target, long relId, RelationshipsScanner scanner)
+        public void emit(long source, long target, RelationshipDataAccessor relData, RelationshipsScanner scanner)
         throws InterruptedException {
             scanner.batchRelationship(source, target, outBuffer, Direction.OUTGOING);
             scanner.batchRelationship(target, source, inBuffer, Direction.INCOMING);
@@ -499,9 +500,9 @@ abstract class RelationshipsScanner extends StatementAction {
         }
 
         @Override
-        public void emit(long source, long target, long relId, RelationshipsScanner scanner)
+        public void emit(long source, long target, RelationshipDataAccessor relData, RelationshipsScanner scanner)
         throws InterruptedException {
-            scanner.batchRelationshipWithId(source, target, relId, buffer, Direction.OUTGOING);
+            scanner.batchRelationshipWithId(source, target, relData, buffer, Direction.OUTGOING);
         }
 
         @Override
@@ -519,7 +520,7 @@ abstract class RelationshipsScanner extends StatementAction {
         }
 
         @Override
-        public void emit(long source, long target, long relId, RelationshipsScanner scanner)
+        public void emit(long source, long target, RelationshipDataAccessor relData, RelationshipsScanner scanner)
         throws InterruptedException {
             scanner.batchRelationship(source, target, buffer, Direction.OUTGOING);
         }
@@ -541,10 +542,10 @@ abstract class RelationshipsScanner extends StatementAction {
         }
 
         @Override
-        public void emit(long source, long target, long relId, RelationshipsScanner scanner)
+        public void emit(long source, long target, RelationshipDataAccessor relData, RelationshipsScanner scanner)
         throws InterruptedException {
             scanner.batchRelationship(target, source, relBuffer, Direction.INCOMING);
-            scanner.batchRelationshipWithId(source, target, relId, weightBuffer, Direction.INCOMING);
+            scanner.batchRelationshipWithId(source, target, relData, weightBuffer, Direction.INCOMING);
         }
 
         @Override
@@ -563,7 +564,7 @@ abstract class RelationshipsScanner extends StatementAction {
         }
 
         @Override
-        public void emit(long source, long target, long relId, RelationshipsScanner scanner)
+        public void emit(long source, long target, RelationshipDataAccessor relData, RelationshipsScanner scanner)
         throws InterruptedException {
             scanner.batchRelationship(target, source, buffer, Direction.INCOMING);
         }
@@ -579,7 +580,7 @@ abstract class RelationshipsScanner extends StatementAction {
         }
 
         @Override
-        public void emit(long source, long target, long relId, RelationshipsScanner scanner) {
+        public void emit(long source, long target, RelationshipDataAccessor relData, RelationshipsScanner scanner) {
         }
 
         @Override
