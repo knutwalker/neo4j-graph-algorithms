@@ -27,6 +27,7 @@ import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.config.Setting;
 import org.neo4j.graphdb.factory.GraphDatabaseFactory;
 import org.neo4j.graphdb.factory.GraphDatabaseSettings;
+import org.neo4j.io.ByteUnit;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 
 import java.io.EOFException;
@@ -67,6 +68,19 @@ public final class LdbcDownloader {
     static synchronized GraphDatabaseAPI openDb(String graphId) throws IOException {
         S3Location location = FILES.get(graphId);
         if (location == null) {
+            String[] graphParts = graphId.split(":");
+            Path graphDbDir = Paths.get(graphParts[0].trim());
+            if (Files.isDirectory(graphDbDir)) {
+                String pageCacheSize = "2G";
+                if (graphParts.length > 1) {
+                    try {
+                        ByteUnit.parse(graphParts[1].trim());
+                        pageCacheSize = graphParts[1].trim();
+                    } catch (IllegalArgumentException ignore) {
+                    }
+                }
+                return openDb(graphDbDir, pageCacheSize);
+            }
             throw new IllegalArgumentException("Unknown graph: " + graphId);
         }
         return openDb(graphId, location);
@@ -88,9 +102,14 @@ public final class LdbcDownloader {
     }
 
     private static GraphDatabaseAPI openDb(Path dbLocation) {
+        return openDb(dbLocation, "2G");
+    }
+
+    private static GraphDatabaseAPI openDb(Path dbLocation, final String pageCache) {
         GraphDatabaseService db = new GraphDatabaseFactory()
                 .newEmbeddedDatabaseBuilder(dbLocation.toFile())
-                .setConfig(GraphDatabaseSettings.pagecache_memory, "2G")
+                .setConfig(GraphDatabaseSettings.pagecache_memory, pageCache)
+                .setConfig(GraphDatabaseSettings.allow_upgrade, "true")
                 .setConfig(GraphDatabaseSettings.allow_store_upgrade, "true")
                 .setConfig(udc, "false")
                 .newGraphDatabase();
