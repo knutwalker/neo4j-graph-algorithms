@@ -209,7 +209,7 @@ final class ParallelScanning2 implements Runnable {
         int baseQueueBatchSize = Math.max(1 << 4, Math.min(1 << 12, setup.batchSize));
         int queueBatchSize = baseQueueBatchSize << 2;
 
-        PageCacheScanner cacheScanner = new PageCacheScanner(api, dimensions.singleRelationshipTypeId());
+        PageCacheScanner cacheScanner = new PageCacheScanner(api, 1000, dimensions.singleRelationshipTypeId());
         ScannerBuffer outBuffer = null, inBuffer = null;
         int required = RelationshipsScanner2.requiredBuffer(setup, weights.loadsWeights());
         if (RelationshipsScanner2.requiresOut(required)) {

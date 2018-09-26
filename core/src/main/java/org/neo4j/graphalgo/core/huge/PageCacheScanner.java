@@ -17,48 +17,56 @@ import org.neo4j.kernel.internal.GraphDatabaseAPI;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.neo4j.kernel.impl.store.RecordPageLocationCalculator.offsetForId;
+
 public final class PageCacheScanner {
 
     public static final class Cursor implements AutoCloseable, RelationshipDataAccessor {
 
         private final int type;
         private final long maxId;
-        private final int recordsPerPage;
         private final int recordSize;
         private final int pageSize;
+        private final int prefetchSize;
+        private final long maxPage; // inclusive, last page to contain a value in range
 
         private ThreadLocal<Cursor> cursors;
-        private AtomicLong currentPageId;
+        private AtomicLong nextPageId;
         private RecordFormat<RelationshipRecord> recordFormat;
         private RelationshipRecord record;
         private PageCursor pageCursor;
 
         private long recordId;
         private long currentPage;
+        private long prefetchedUntilPage;
         private int offset;
+        private int endOffset;
 
         private Cursor(
                 int type,
                 long maxId,
-                int recordsPerPage,
                 int recordSize,
                 int pageSize,
+                int recordsPerPage,
+                int prefetchSize,
                 ThreadLocal<Cursor> cursors,
-                AtomicLong currentPageId,
+                AtomicLong nextPageId,
                 RecordFormat<RelationshipRecord> recordFormat,
                 RelationshipRecord record,
                 PageCursor pageCursor) {
             this.type = type;
             this.maxId = maxId;
-            this.recordsPerPage = recordsPerPage;
             this.recordSize = recordSize;
             this.pageSize = pageSize;
+            this.prefetchSize = prefetchSize;
+            this.maxPage = ((maxId - 1L) + ((long) recordsPerPage - 1L)) / (long) recordsPerPage;
             this.cursors = cursors;
-            this.currentPageId = currentPageId;
+            this.nextPageId = nextPageId;
             this.recordFormat = recordFormat;
             this.record = record;
             this.pageCursor = pageCursor;
             this.offset = pageSize; // trigger page load as first action
+            this.endOffset = pageSize;
         }
 
         public boolean next() {
@@ -72,15 +80,13 @@ public final class PageCacheScanner {
                         return true;
                     }
 
-                    currentPage = currentPageId.getAndIncrement();
-                    recordId = currentPage * recordsPerPage;
-                    if (recordId < maxId && pageCursor.next(currentPage)) {
-                        offset = 0;
-                    } else {
-                        record.setId(recordId = -1L);
-                        record.clear();
-                        return false;
+                    if (loadNextPage()) {
+                        continue;
                     }
+
+                    record.setId(recordId = -1L);
+                    record.clear();
+                    return false;
                 } while (true);
             } catch (IOException e) {
                 throw new UnderlyingStorageException(e);
@@ -88,7 +94,7 @@ public final class PageCacheScanner {
         }
 
         private boolean loadFromCurrentPage() throws IOException {
-            while (offset < pageSize && recordId < maxId) {
+            while (offset < endOffset) {
                 record.setId(recordId++);
                 loadAtOffset(offset);
                 offset += recordSize;
@@ -97,6 +103,40 @@ public final class PageCacheScanner {
                 }
             }
             return false;
+        }
+
+        private boolean loadNextPage() throws IOException {
+            long current = currentPage++;
+            if (current < prefetchedUntilPage) {
+                offset = 0;
+                return pageCursor.next(current);
+            }
+            if (current < maxPage) {
+                preFetchPages();
+                return loadNextPage();
+            }
+            if (current == maxPage) {
+                offset = 0;
+                endOffset = offsetForId(maxId, pageSize, recordSize);
+                return pageCursor.next(current);
+            }
+            return false;
+        }
+
+        private void preFetchPages() throws IOException {
+            PageCursor pageCursor = this.pageCursor;
+            long prefetchSize = (long) this.prefetchSize;
+            long startPage = nextPageId.getAndAdd(prefetchSize);
+            long endPage = Math.min(maxPage, startPage + prefetchSize);
+            long preFetchedPage = startPage;
+            while (preFetchedPage < endPage) {
+                if (!pageCursor.next(preFetchedPage)) {
+                    break;
+                }
+                ++preFetchedPage;
+            }
+            this.currentPage = startPage;
+            this.prefetchedUntilPage = preFetchedPage;
         }
 
         private void loadAtOffset(int offset) throws IOException {
@@ -189,7 +229,7 @@ public final class PageCacheScanner {
                 pageCursor = null;
                 record = null;
                 recordFormat = null;
-                currentPageId = null;
+                nextPageId = null;
 
                 final Cursor localCursor = cursors.get();
                 // sanity check, should always be called from the same thread
@@ -202,6 +242,7 @@ public final class PageCacheScanner {
     }
 
     private final int type;
+    private final int prefetchSize;
     private final RelationshipStore store;
     private final RecordFormat<RelationshipRecord> recordFormat;
     private final long maxId;
@@ -211,12 +252,13 @@ public final class PageCacheScanner {
     private final ThreadLocal<Cursor> cursors;
     private final AtomicLong nextPageId;
 
-    public PageCacheScanner(GraphDatabaseAPI api, int type) {
+    public PageCacheScanner(GraphDatabaseAPI api, int prefetchSize, int type) {
         NeoStores neoStores = api
                 .getDependencyResolver()
                 .resolveDependency(RecordStorageEngine.class)
                 .testAccessNeoStores();
         this.type = type;
+        this.prefetchSize = prefetchSize;
         store = neoStores.getRelationshipStore();
         recordFormat = neoStores.getRecordFormats().relationship();
         maxId = 1L + store.getHighestPossibleIdInUse();
@@ -226,19 +268,6 @@ public final class PageCacheScanner {
         cursors = new ThreadLocal<>();
         nextPageId = new PaddedAtomicLong();
     }
-
-//    private PageCacheScanner(
-//            int type,
-//            RelationshipStore relStore,
-//            long maxId,
-//            long pageSize) {
-//        this.type = type;
-//        this.relStore = relStore;
-//        this.maxId = maxId;
-//        this.pageSize = pageSize;
-//        cursors = new ThreadLocal<>();
-//        nextPageId = new AtomicLong();
-//    }
 
     public Cursor getCursor() {
         Cursor cursor = cursors.get();
@@ -253,9 +282,10 @@ public final class PageCacheScanner {
             cursor = new Cursor(
                     type,
                     maxId,
-                    recordsPerPage,
                     recordSize,
                     pageSize,
+                    recordsPerPage,
+                    prefetchSize,
                     cursors,
                     nextPageId,
                     recordFormat,
