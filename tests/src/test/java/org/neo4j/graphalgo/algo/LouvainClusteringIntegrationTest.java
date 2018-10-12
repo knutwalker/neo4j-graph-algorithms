@@ -19,23 +19,19 @@
 package org.neo4j.graphalgo.algo;
 
 import com.carrotsearch.hppc.IntIntScatterMap;
-import org.junit.BeforeClass;
-import org.junit.ClassRule;
-import org.junit.Ignore;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.*;
 import org.junit.rules.ExpectedException;
 import org.neo4j.graphalgo.LouvainProc;
-import org.neo4j.graphdb.QueryExecutionException;
-import org.neo4j.helpers.Exceptions;
 import org.neo4j.internal.kernel.api.exceptions.KernelException;
 import org.neo4j.kernel.impl.proc.Procedures;
 import org.neo4j.test.rule.ImpermanentDatabaseRule;
 
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.Map;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
+import static junit.framework.TestCase.assertNull;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -84,10 +80,15 @@ public class LouvainClusteringIntegrationTest {
                         " (f)-[:TYPE]->(h),\n" +
                         " (f)-[:TYPE]->(g),\n" +
                         " (g)-[:TYPE]->(h),\n" +
-
                         " (b)-[:TYPE]->(e)";
 
         DB.resolveDependency(Procedures.class).registerProcedure(LouvainProc.class);
+        DB.execute(cypher);
+    }
+
+    @Before
+    public void clearCommunities() {
+        String cypher  ="MATCH (n) REMOVE n.communities REMOVE n.community";
         DB.execute(cypher);
     }
 
@@ -122,13 +123,91 @@ public class LouvainClusteringIntegrationTest {
     @Test
     public void testStream() {
         final String cypher = "CALL algo.louvain.stream('', '', {concurrency:1}) " +
-                "YIELD nodeId, community";
+                "YIELD nodeId, community, communities";
         final IntIntScatterMap testMap = new IntIntScatterMap();
         DB.execute(cypher).accept(row -> {
-            testMap.addTo(row.getNumber("community").intValue(), 1);
+            final long community = (long) row.get("community");
+            System.out.println(community);
+            testMap.addTo((int) community, 1);
             return false;
         });
         assertEquals(3, testMap.size());
+    }
+
+    @Test
+    public void testStreamNoIntermediateCommunitiesByDefault() {
+        final String cypher = "CALL algo.louvain.stream('', '', {concurrency:1}) " +
+                "YIELD nodeId, community, communities";
+        final IntIntScatterMap testMap = new IntIntScatterMap();
+        DB.execute(cypher).accept(row -> {
+            Object communities = row.get("communities");
+            assertNull(communities);
+            return false;
+        });
+    }
+
+    @Test
+    public void testStreamIncludingIntermediateCommunities() {
+        final String cypher = "CALL algo.louvain.stream('', '', {concurrency:1, includeIntermediateCommunities: true}) " +
+                "YIELD nodeId, communities";
+        final IntIntScatterMap testMap = new IntIntScatterMap();
+        DB.execute(cypher).accept(row -> {
+            final long community = ((List<Long>) row.get("communities")).get(0);
+            System.out.println(community);
+            testMap.addTo((int) community, 1);
+            return false;
+        });
+        assertEquals(3, testMap.size());
+    }
+
+    @Test
+    public void testWrite() {
+        final String cypher = "CALL algo.louvain('', '', {concurrency:1})";
+        final IntIntScatterMap testMap = new IntIntScatterMap();
+        DB.execute(cypher).close();
+
+        String readQuery = "MATCH (n) RETURN n.community AS community";
+
+        DB.execute(readQuery).accept(row -> {
+            final int community = (int) row.get("community");
+            testMap.addTo(community, 1);
+            return true;
+        });
+
+        assertEquals(3, testMap.size());
+    }
+
+    @Test
+    public void testWriteIncludingIntermediateCommunities() {
+        final String cypher = "CALL algo.louvain('', '', {concurrency:1, includeIntermediateCommunities: true})";
+        final IntIntScatterMap testMap = new IntIntScatterMap();
+        DB.execute(cypher).close();
+
+        String readQuery = "MATCH (n) RETURN n.communities AS communities";
+
+        DB.execute(readQuery).accept(row -> {
+            final long community = ((int[]) row.get("communities"))[0];
+            testMap.addTo((int) community, 1);
+            return true;
+        });
+
+        assertEquals(3, testMap.size());
+    }
+
+    @Test
+    public void testWriteNoIntermediateCommunitiesByDefault() {
+        final String cypher = "CALL algo.louvain('', '', {concurrency:1})";
+        DB.execute(cypher).close();
+
+        final AtomicLong testInteger = new AtomicLong(0);
+        String readQuery = "MATCH (n) WHERE not(exists(n.communities)) RETURN count(*) AS count";
+        DB.execute(readQuery).accept(row -> {
+            long count = (long) row.get("count");
+            testInteger.set(count);
+            return false;
+        });
+
+        assertEquals(9, testInteger.get());
     }
 
     @Test
@@ -196,6 +275,17 @@ public class LouvainClusteringIntegrationTest {
     }
 
     @Test
+    public void shouldAllowHugeGraph() {
+        final String cypher = "CALL algo.louvain('', '', {graph:'huge'}) YIELD nodes, communityCount";
+
+        DB.execute(cypher).accept(row -> {
+            assertEquals("invalid node count",9, row.getNumber("nodes").longValue());
+            assertEquals("wrong community count", 3, row.getNumber("communityCount").longValue());
+            return true;
+        });
+    }
+
+    @Test
     public void shouldAllowCypherGraph() {
         final String cypher = "CALL algo.louvain('MATCH (n) RETURN id(n) as id', 'MATCH (s)-->(t) RETURN id(s) as source, id(t) as target', {graph:'cypher'}) YIELD nodes, communityCount";
 
@@ -206,43 +296,26 @@ public class LouvainClusteringIntegrationTest {
         });
     }
 
-    @Test
-    public void shouldNotAllowLightOrKernelGraph() throws Throwable {
-        String query = "CALL algo.louvain('', '', {graph:$graph})";
-
-        exceptions.expect(IllegalArgumentException.class);
-        exceptions.expectMessage("The graph algorithm only supports these graph types; [heavy, cypher, huge]");
-
-        for (final String graph : Arrays.asList("light", "huge", "kernel")) {
-            Map<String, Object> params = Collections.singletonMap("graph", graph);
-            try {
-                DB.execute(query, params).close();
-            } catch (QueryExecutionException qee) {
-                throw Exceptions.rootCause(qee);
-            }
-        }
-    }
-
     public void printNodeSets() {
         final StringBuilder builder = new StringBuilder();
         for (String node : NODES) {
             if (builder.length() > 0) {
                 builder.append(", ");
             }
-            builder.append(String.format("%s : C%d", node, getClusterId(node)));
+            builder.append(String.format("%s : %s", node, Arrays.toString(getClusterId(node))));
         }
         System.out.println(builder.toString());
     }
 
 
-    public Object getClusterId(String nodeName) {
+    public int[] getClusterId(String nodeName) {
 
-        Object id[] = {0};
+        int id[] = {0};
         DB.execute("MATCH (n) WHERE n.name = '" + nodeName + "' RETURN n").accept(row -> {
-            id[0] = row.getNode("n").getProperty("community");
+            id[0] = (int) row.getNode("n").getProperty("community");
             return true;
         });
-        return id[0];
+        return id;
     }
 
 }

@@ -49,6 +49,7 @@ public class PageRankProcIntegrationTest {
 
     private static GraphDatabaseAPI db;
     private static Map<Long, Double> expected = new HashMap<>();
+    private static Map<Long, Double> weightedExpected = new HashMap<>();
 
     private static final String DB_CYPHER = "" +
             "CREATE (a:Label1 {name:\"a\"})\n" +
@@ -73,14 +74,19 @@ public class PageRankProcIntegrationTest {
             "CREATE (t:Label2 {name:\"t\"})\n" +
             "CREATE\n" +
             "  (b)-[:TYPE1{foo:1.0}]->(c),\n" +
+
             "  (c)-[:TYPE1{foo:1.2}]->(b),\n" +
+
             "  (d)-[:TYPE1{foo:1.3}]->(a),\n" +
             "  (d)-[:TYPE1{foo:1.7}]->(b),\n" +
-            "  (e)-[:TYPE1{foo:1.1}]->(b),\n" +
+
+            "  (e)-[:TYPE1{foo:6.1}]->(b),\n" +
             "  (e)-[:TYPE1{foo:2.2}]->(d),\n" +
             "  (e)-[:TYPE1{foo:1.5}]->(f),\n" +
-            "  (f)-[:TYPE1{foo:3.5}]->(b),\n" +
+
+            "  (f)-[:TYPE1{foo:10.5}]->(b),\n" +
             "  (f)-[:TYPE1{foo:2.9}]->(e),\n" +
+
             "  (g)-[:TYPE2{foo:3.2}]->(b),\n" +
             "  (g)-[:TYPE2{foo:5.3}]->(e),\n" +
             "  (h)-[:TYPE2{foo:9.5}]->(b),\n" +
@@ -120,6 +126,17 @@ public class PageRankProcIntegrationTest {
             expected.put(db.findNode(label, "name", "h").getId(), 0.150);
             expected.put(db.findNode(label, "name", "i").getId(), 0.150);
             expected.put(db.findNode(label, "name", "j").getId(), 0.150);
+
+            weightedExpected.put(db.findNode(label, "name", "a").getId(), 0.218);
+            weightedExpected.put(db.findNode(label, "name", "b").getId(), 2.008);
+            weightedExpected.put(db.findNode(label, "name", "c").getId(), 1.850);
+            weightedExpected.put(db.findNode(label, "name", "d").getId(), 0.185);
+            weightedExpected.put(db.findNode(label, "name", "e").getId(), 0.182);
+            weightedExpected.put(db.findNode(label, "name", "f").getId(), 0.174);
+            weightedExpected.put(db.findNode(label, "name", "g").getId(), 0.150);
+            weightedExpected.put(db.findNode(label, "name", "h").getId(), 0.150);
+            weightedExpected.put(db.findNode(label, "name", "i").getId(), 0.150);
+            weightedExpected.put(db.findNode(label, "name", "j").getId(), 0.150);
             tx.success();
         }
     }
@@ -150,6 +167,43 @@ public class PageRankProcIntegrationTest {
     }
 
     @Test
+    public void testWeightedPageRankStream() throws Exception {
+        final Map<Long, Double> actual = new HashMap<>();
+        runQuery(
+                "CALL algo.pageRank.stream('Label1', 'TYPE1', {graph:'"+graphImpl+"', weightProperty: 'foo'}) YIELD node, score",
+                row -> actual.put(
+                        row.getNode("node").getId(),
+                        (Double) row.get("score")));
+
+        assertMapEquals(weightedExpected, actual);
+    }
+
+    @Test
+    public void testWeightedPageRankWithCachedWeightsStream() throws Exception {
+        final Map<Long, Double> actual = new HashMap<>();
+        runQuery(
+                "CALL algo.pageRank.stream('Label1', 'TYPE1', {graph:'"+graphImpl+"', weightProperty: 'foo', cacheWeights: true}) YIELD node, score",
+                row -> actual.put(
+                        row.getNode("node").getId(),
+                        (Double) row.get("score")));
+
+        assertMapEquals(weightedExpected, actual);
+    }
+
+    @Test
+    public void testWeightedPageRankWithAllRelationshipsEqualStream() throws Exception {
+        final Map<Long, Double> actual = new HashMap<>();
+        runQuery(
+                "CALL algo.pageRank.stream('Label1', 'TYPE1', {graph:'"+graphImpl+"', weightProperty: 'madeUp', defaultValue: 1.0}) YIELD node, score",
+                row -> actual.put(
+                        row.getNode("node").getId(),
+                        (Double) row.get("score")));
+
+        assertMapEquals(expected, actual);
+    }
+
+
+    @Test
     public void testPageRankWriteBack() throws Exception {
         runQuery(
                 "CALL algo.pageRank('Label1', 'TYPE1', {graph:'"+graphImpl+"'}) YIELD writeMillis, write, writeProperty",
@@ -161,7 +215,22 @@ public class PageRankProcIntegrationTest {
                             row.getNumber("writeMillis").intValue() >= 0);
                 });
 
-        assertResult("pagerank");
+        assertResult("pagerank", expected);
+    }
+
+    @Test
+    public void testWeightedPageRankWriteBack() throws Exception {
+        runQuery(
+                "CALL algo.pageRank('Label1', 'TYPE1', {graph:'"+graphImpl+"', weightProperty: 'foo'}) YIELD writeMillis, write, writeProperty",
+                row -> {
+                    assertTrue(row.getBoolean("write"));
+                    assertEquals("pagerank", row.getString("writeProperty"));
+                    assertTrue(
+                            "write time not set",
+                            row.getNumber("writeMillis").intValue() >= 0);
+                });
+
+        assertResult("pagerank", weightedExpected);
     }
 
     @Test
@@ -176,7 +245,7 @@ public class PageRankProcIntegrationTest {
                             row.getNumber("writeMillis").intValue() >= 0);
                 });
 
-        assertResult("foobar");
+        assertResult("foobar", expected);
     }
 
     @Test
@@ -187,7 +256,7 @@ public class PageRankProcIntegrationTest {
                         "write time not set",
                         row.getNumber("writeMillis").intValue() >= 0));
 
-        assertResult("pagerank");
+        assertResult("pagerank", expected);
     }
 
     @Test
@@ -207,7 +276,14 @@ public class PageRankProcIntegrationTest {
     private static void runQuery(
             String query,
             Consumer<Result.ResultRow> check) {
-        try (Result result = db.execute(query)) {
+        runQuery(query, new HashMap<>(), check);
+    }
+
+    private static void runQuery(
+            String query,
+            Map<String, Object> params,
+            Consumer<Result.ResultRow> check) {
+        try (Result result = db.execute(query, params)) {
             result.accept(row -> {
                 check.accept(row);
                 return true;
@@ -215,7 +291,7 @@ public class PageRankProcIntegrationTest {
         }
     }
 
-    private void assertResult(final String scoreProperty) {
+    private void assertResult(final String scoreProperty, Map<Long, Double> expected) {
         try (Transaction tx = db.beginTx()) {
             for (Map.Entry<Long, Double> entry : expected.entrySet()) {
                 double score = ((Number) db

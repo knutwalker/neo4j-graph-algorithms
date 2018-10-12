@@ -29,6 +29,8 @@ import org.neo4j.graphalgo.core.GraphLoader;
 import org.neo4j.graphalgo.core.heavyweight.HeavyGraphFactory;
 import org.neo4j.graphalgo.core.huge.loader.HugeGraphFactory;
 import org.neo4j.graphalgo.core.neo4jview.GraphViewFactory;
+import org.neo4j.graphalgo.impl.pagerank.PageRankAlgorithm;
+import org.neo4j.graphalgo.impl.pagerank.PageRankResult;
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
@@ -39,6 +41,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.IntStream;
+import java.util.stream.LongStream;
 
 import static org.junit.Assert.assertEquals;
 
@@ -146,7 +149,7 @@ public final class PageRankWikiTest {
                 .load(graphImpl);
 
         final PageRankResult rankResult = PageRankAlgorithm
-                .of(graph, 0.85)
+                .of(graph, 0.85, LongStream.empty())
                 .compute(40)
                 .result();
 

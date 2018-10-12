@@ -164,7 +164,6 @@ public class DegreesTest {
 
     @Test
     public void testBidirectionalBoth() {
-
         setup(bidirectional, Direction.BOTH);
         assertEquals(4, graph.degree(nodeId("a"), Direction.BOTH));
         assertEquals(4, graph.degree(nodeId("b"), Direction.BOTH));
@@ -173,7 +172,6 @@ public class DegreesTest {
 
     @Test
     public void testBidirectionalUndirected() {
-
         setup(bidirectional, null);
         assertEquals(2, graph.degree(nodeId("a"), Direction.OUTGOING));
         assertEquals(2, graph.degree(nodeId("b"), Direction.OUTGOING));

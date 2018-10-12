@@ -23,6 +23,7 @@ import org.neo4j.collection.primitive.PrimitiveIntIterable;
 import org.neo4j.collection.primitive.PrimitiveIntIterator;
 import org.neo4j.graphalgo.api.Graph;
 import org.neo4j.graphalgo.api.RelationshipConsumer;
+import org.neo4j.graphalgo.api.RelationshipIntersect;
 import org.neo4j.graphalgo.api.WeightedRelationshipConsumer;
 import org.neo4j.graphalgo.core.GraphDimensions;
 import org.neo4j.graphalgo.core.IdMap;
@@ -62,16 +63,18 @@ public class GraphView implements Graph {
     private final GraphDimensions dimensions;
     private final double propertyDefaultWeight;
     private final IdMap idMapping;
+    private boolean loadAsUndirected;
 
     GraphView(
             GraphDatabaseAPI db,
             GraphDimensions dimensions,
             IdMap idMapping,
-            double propertyDefaultWeight) {
+            double propertyDefaultWeight, boolean loadAsUndirected) {
         this.tx = new TransactionWrapper(db);
         this.dimensions = dimensions;
         this.propertyDefaultWeight = propertyDefaultWeight;
         this.idMapping = idMapping;
+        this.loadAsUndirected = loadAsUndirected;
     }
 
     @Override
@@ -129,7 +132,7 @@ public class GraphView implements Graph {
                     };
 
                     LoadRelationships loader = rels(transaction);
-                    if (direction == Direction.BOTH) {
+                    if (direction == Direction.BOTH || (direction == Direction.OUTGOING && loadAsUndirected) ) {
                         // can't use relationshipsBoth here, b/c we want to be consistent with the other graph impls
                         // that are iteration first over outgoing, then over incoming relationships
                         RelationshipSelectionCursor cursor = loader.relationshipsOut(nc);
@@ -178,6 +181,10 @@ public class GraphView implements Graph {
             try (NodeCursor nc = transaction.cursors().allocateNodeCursor()) {
                 transaction.dataRead().singleNode(toOriginalNodeId(nodeId), nc);
                 if (nc.next()) {
+                    if (direction == Direction.BOTH || (direction == Direction.OUTGOING && loadAsUndirected) ) {
+                        return rels(transaction).degreeOf(Direction.BOTH, nc);
+                    }
+
                     return rels(transaction).degreeOf(direction, nc);
                 }
                 return 0;
@@ -280,6 +287,11 @@ public class GraphView implements Graph {
 
     @Override
     public void canRelease(boolean canRelease) {
+    }
+
+    @Override
+    public RelationshipIntersect intersection() {
+        throw new UnsupportedOperationException("Not implemented for Graph View");
     }
 
     private static class SizedNodeIterator implements PrimitiveIntIterator {

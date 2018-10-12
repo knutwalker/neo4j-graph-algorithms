@@ -19,10 +19,15 @@
 package org.neo4j.graphalgo.core.huge;
 
 import org.neo4j.graphalgo.api.HugeRelationshipConsumer;
-import org.neo4j.graphalgo.api.HugeRelationshipIntersect;
+import org.neo4j.graphalgo.api.RelationshipIntersect;
 import org.neo4j.graphalgo.api.IntersectionConsumer;
 
-class HugeGraphIntersectImpl implements HugeRelationshipIntersect {
+/**
+ * An instance of this is not thread-safe; Iteration/Intersection on multiple threads will
+ * throw misleading {@link NullPointerException}s.
+ * Instances are however safe to use concurrently with other {@link org.neo4j.graphalgo.api.HugeRelationshipIterator}s.
+ */
+class HugeGraphIntersectImpl implements RelationshipIntersect {
 
     private HugeAdjacencyList adjacency;
     private HugeAdjacencyOffsets offsets;
@@ -42,6 +47,7 @@ class HugeGraphIntersectImpl implements HugeRelationshipIntersect {
         empty = adjacency.newCursor();
     }
 
+    /*
     @Override
     public void forEachRelationship(long nodeId, HugeRelationshipConsumer consumer) {
         HugeAdjacencyList.Cursor cursor = cursor(nodeId, cache, offsets, adjacency);
@@ -53,6 +59,7 @@ class HugeGraphIntersectImpl implements HugeRelationshipIntersect {
         return degree(node, offsets, adjacency);
     }
 
+    */
     @Override
     public void intersectAll(long nodeIdA, IntersectionConsumer consumer) {
         HugeAdjacencyOffsets offsets = this.offsets;
