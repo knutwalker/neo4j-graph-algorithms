@@ -18,6 +18,8 @@
  */
 package org.neo4j.graphalgo.core.huge;
 
+import org.neo4j.graphalgo.core.huge.loader.MutableIntValue;
+
 import java.util.Arrays;
 
 import static org.neo4j.graphalgo.core.huge.VarLongDecoding.decodeDeltaVLongs;
