@@ -77,6 +77,10 @@ public final class GraphDimensions extends StatementFunction<GraphDimensions> {
         return relationId;
     }
 
+    public int singleRelationshipTypeId() {
+        return relationId == null ? Read.ANY_RELATIONSHIP_TYPE : relationId[0];
+    }
+
     public int relWeightId() {
         return relWeightId;
     }
@@ -143,12 +147,12 @@ public final class GraphDimensions extends StatementFunction<GraphDimensions> {
         maxRelCount = Math.max(
                 dataRead.countsForRelationshipWithoutTxState(
                         labelId,
-                        relationId == null ? Read.ANY_RELATIONSHIP_TYPE : relationId[0],
+                        singleRelationshipTypeId(),
                         Read.ANY_LABEL
                 ),
                 dataRead.countsForRelationshipWithoutTxState(
                         Read.ANY_LABEL,
-                        relationId == null ? Read.ANY_RELATIONSHIP_TYPE : relationId[0],
+                        singleRelationshipTypeId(),
                         labelId
                 )
         );
