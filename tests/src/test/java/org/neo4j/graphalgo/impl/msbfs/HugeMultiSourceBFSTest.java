@@ -313,6 +313,9 @@ public final class HugeMultiSourceBFSTest {
                         .setRelationship("BAR");
 
                 build.accept(graphBuilder);
+                tx.success();
+            }
+            try (Transaction tx = db.beginTx()) {
                 HugeGraph graph = (HugeGraph) new GraphLoader(db).load(HugeGraphFactory.class);
                 block.accept(graph);
                 tx.success();
