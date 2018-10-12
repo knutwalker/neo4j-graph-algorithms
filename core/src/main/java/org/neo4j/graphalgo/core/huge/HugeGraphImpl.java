@@ -92,7 +92,7 @@ public class HugeGraphImpl implements HugeGraph {
     private HugeAdjacencyList.Cursor outCache;
     private boolean canRelease = true;
 
-    HugeGraphImpl(
+    public HugeGraphImpl(
             final AllocationTracker tracker,
             final HugeIdMap idMapping,
             final HugeWeightMapping weights,

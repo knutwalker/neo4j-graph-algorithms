@@ -18,14 +18,13 @@
  */
 package org.neo4j.graphalgo.core.huge;
 
-import org.neo4j.graphalgo.core.huge.AdjacencyCompression.IntValue;
-
 import java.util.Arrays;
 
-import static org.neo4j.graphalgo.core.huge.AdjacencyCompression.CHUNK_SIZE;
 import static org.neo4j.graphalgo.core.huge.VarLongDecoding.decodeDeltaVLongs;
 
 final class AdjacencyDecompression {
+
+    private static final int CHUNK_SIZE = 64;
 
     private final long[] block;
     private int pos;
@@ -74,7 +73,7 @@ final class AdjacencyDecompression {
         return block[0];
     }
 
-    long skipUntil(long target, int remaining, IntValue consumed) {
+    long skipUntil(long target, int remaining, MutableIntValue consumed) {
         int pos = this.pos;
         long[] block = this.block;
         int available = remaining;
@@ -97,7 +96,7 @@ final class AdjacencyDecompression {
         return block[targetPos];
     }
 
-    long advance(long target, int remaining, IntValue consumed) {
+    long advance(long target, int remaining, MutableIntValue consumed) {
         int pos = this.pos;
         long[] block = this.block;
         int available = remaining;
