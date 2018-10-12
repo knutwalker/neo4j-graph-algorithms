@@ -23,17 +23,21 @@ import org.neo4j.graphalgo.core.utils.paged.BitUtil;
 import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfLongArray;
 import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfObjectArray;
 
-abstract class HugeAdjacencyOffsets {
+public abstract class HugeAdjacencyOffsets {
 
     abstract long get(long index);
 
     abstract long release();
 
-    static HugeAdjacencyOffsets of(long[][] pages, int pageSize) {
+    public static HugeAdjacencyOffsets of(long[][] pages, int pageSize) {
         if (pages.length == 1) {
             return new SinglePageOffsets(pages[0]);
         }
         return new PagedOffsets(pages, pageSize);
+    }
+
+    public static HugeAdjacencyOffsets of(long[] page) {
+        return new SinglePageOffsets(page);
     }
 
     private static final class PagedOffsets extends HugeAdjacencyOffsets {
