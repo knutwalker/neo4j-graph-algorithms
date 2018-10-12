@@ -37,7 +37,6 @@ import org.neo4j.graphalgo.core.utils.Pools;
 import org.neo4j.graphalgo.core.utils.ProgressTimer;
 import org.neo4j.graphalgo.impl.triangle.TriangleCountAlgorithm;
 import org.neo4j.graphalgo.impl.triangle.TriangleCountForkJoin;
-import org.neo4j.graphalgo.impl.triangle.TriangleCountQueue;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.RelationshipType;
