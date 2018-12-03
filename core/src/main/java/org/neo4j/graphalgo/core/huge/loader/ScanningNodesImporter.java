@@ -18,13 +18,12 @@
  */
 package org.neo4j.graphalgo.core.huge.loader;
 
-import org.neo4j.graphalgo.api.GraphSetup;
 import org.neo4j.graphalgo.core.GraphDimensions;
-import org.neo4j.graphalgo.core.huge.HugeIdMap;
 import org.neo4j.graphalgo.core.huge.loader.ImportingThreadPool.ImportResult;
 import org.neo4j.graphalgo.core.utils.ImportProgress;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
+import org.neo4j.logging.Log;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -34,126 +33,85 @@ import java.util.concurrent.ExecutorService;
 import static org.neo4j.graphalgo.core.utils.paged.AllocationTracker.humanReadable;
 
 
-abstract class ScanningRelationshipImporter implements Runnable {
+final class ScanningNodesImporter {
 
-    private final GraphSetup setup;
     private final GraphDatabaseAPI api;
     private final GraphDimensions dimensions;
     private final ImportProgress progress;
     private final AllocationTracker tracker;
-    private final HugeIdMap idMap;
-    private final HugeWeightMapBuilder weights;
-    private final boolean loadDegrees;
-    private final HugeAdjacencyBuilder outAdjacency;
-    private final HugeAdjacencyBuilder inAdjacency;
     private final ExecutorService threadPool;
     private final int concurrency;
     private static final BigInteger A_BILLION = BigInteger.valueOf(1_000_000_000L);
 
-    static Runnable create(
-            GraphSetup setup,
+    static ScanningNodesImporter create(
             GraphDatabaseAPI api,
             GraphDimensions dimensions,
             ImportProgress progress,
             AllocationTracker tracker,
-            HugeIdMap idMap,
-            HugeWeightMapBuilder weights,
-            HugeAdjacencyBuilder outAdjacency,
-            HugeAdjacencyBuilder inAdjacency,
             ExecutorService threadPool,
-            boolean loadDegrees,
             int concurrency) {
-        return new ScanningRelationshipImporter(
-                setup, api, dimensions, progress, tracker, idMap, weights, loadDegrees,
-                outAdjacency, inAdjacency, threadPool, concurrency) {
-        };
+        return new ScanningNodesImporter(api, dimensions, progress, tracker, threadPool, concurrency);
     }
 
-    private ScanningRelationshipImporter(
-            GraphSetup setup,
+    private ScanningNodesImporter(
             GraphDatabaseAPI api,
             GraphDimensions dimensions,
             ImportProgress progress,
             AllocationTracker tracker,
-            HugeIdMap idMap,
-            HugeWeightMapBuilder weights,
-            boolean loadDegrees,
-            HugeAdjacencyBuilder outAdjacency,
-            HugeAdjacencyBuilder inAdjacency,
             ExecutorService threadPool,
             int concurrency) {
-        this.setup = setup;
         this.api = api;
         this.dimensions = dimensions;
         this.progress = progress;
         this.tracker = tracker;
-        this.idMap = idMap;
-        this.weights = weights;
-        this.loadDegrees = loadDegrees;
-        this.outAdjacency = outAdjacency;
-        this.inAdjacency = inAdjacency;
         this.threadPool = threadPool;
         this.concurrency = concurrency;
     }
 
-    @Override
-    public void run() {
-        long nodeCount = idMap.nodeCount();
+    HugeIdMap call(Log log) {
+        long nodeCount = dimensions.hugeNodeCount();
+
         final ImportSizing sizing = ImportSizing.of(concurrency, nodeCount);
         int numberOfThreads = sizing.numberOfThreads();
 
-        RelationshipStoreScanner scanner = RelationshipStoreScanner.of(api);
-        ImportingThreadPool.CreateScanner creator = createScanner(
-                nodeCount,
-                sizing.pageSize(),
-                sizing.numberOfPages(), scanner);
+        NodeStoreScanner scanner = NodeStoreScanner.of(api);
+        HugeIdMapBuilder mapBuilder = createIdMapBuilder(nodeCount);
+        ImportingThreadPool.CreateScanner creator = createScanner(mapBuilder, scanner);
 
         ImportingThreadPool pool = new ImportingThreadPool(numberOfThreads, creator);
 
         ImportResult importResult = pool.run(threadPool);
 
         long requiredBytes = scanner.storeSize();
-        long relsImported = importResult.relsImported;
-        BigInteger bigNanos = BigInteger.valueOf(importResult.tookInNanos);
+        long nodesImported = importResult.recordsImported;
+        BigInteger bigNanos = BigInteger.valueOf(importResult.tookNanos);
         double tookInSeconds = new BigDecimal(bigNanos).divide(new BigDecimal(A_BILLION), 9, RoundingMode.CEILING).doubleValue();
         long bytesPerSecond = A_BILLION.multiply(BigInteger.valueOf(requiredBytes)).divide(bigNanos).longValueExact();
 
-        setup.log.info(
-                "Relationship Store Scan: Imported %,d records from %s (%,d bytes); took %.3f s, %,.2f records/s, %s/s (%,d bytes/s) (per thread: %,.2f records/s, %s/s (%,d bytes/s))",
-                relsImported,
+        log.info(
+                "Node Store Scan: Imported %,d records from %s (%,d bytes); took %.3f s, %,.2f records/s, %s/s (%,d bytes/s) (per thread: %,.2f records/s, %s/s (%,d bytes/s))",
+                nodesImported,
                 humanReadable(requiredBytes),
                 requiredBytes,
                 tookInSeconds,
-                (double) relsImported / tookInSeconds,
+                (double) nodesImported / tookInSeconds,
                 humanReadable(bytesPerSecond),
                 bytesPerSecond,
-                (double) relsImported / tookInSeconds / numberOfThreads,
+                (double) nodesImported / tookInSeconds / numberOfThreads,
                 humanReadable(bytesPerSecond / numberOfThreads),
                 bytesPerSecond / numberOfThreads
         );
+
+        return mapBuilder.build(dimensions.allNodesCount());
+    }
+
+    private HugeIdMapBuilder createIdMapBuilder(final long nodeCount) {
+        return HugeIdMapBuilder.of(nodeCount, tracker);
     }
 
     private ImportingThreadPool.CreateScanner createScanner(
-            long nodeCount,
-            int pageSize,
-            int numberOfPages,
-            RelationshipStoreScanner scanner) {
-        WeightBuilder weightBuilder = WeightBuilder.of(weights, numberOfPages, pageSize, nodeCount, tracker);
-        AdjacencyBuilder outBuilder = AdjacencyBuilder.compressing(outAdjacency, numberOfPages, pageSize, tracker);
-        AdjacencyBuilder inBuilder = AdjacencyBuilder.compressing(inAdjacency, numberOfPages, pageSize, tracker);
-
-        for (int idx = 0; idx < numberOfPages; idx++) {
-            weightBuilder.addWeightImporter(idx);
-            outBuilder.addAdjacencyImporter(tracker, loadDegrees, idx);
-            inBuilder.addAdjacencyImporter(tracker, loadDegrees, idx);
-        }
-
-        weightBuilder.finish();
-        outBuilder.finishPreparation();
-        inBuilder.finishPreparation();
-
-        return RelationshipsScanner.of(
-                api, setup, progress, idMap, scanner, dimensions.singleRelationshipTypeId(),
-                tracker, weightBuilder, outBuilder, inBuilder);
+            HugeIdMapBuilder mapBuilder,
+            NodeStoreScanner scanner) {
+        return NodesScanner.of(api, scanner, dimensions.labelId(), progress, mapBuilder);
     }
 }

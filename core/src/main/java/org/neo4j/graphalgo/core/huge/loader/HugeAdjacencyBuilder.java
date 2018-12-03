@@ -25,7 +25,6 @@ import org.neo4j.graphalgo.api.HugeWeightMapping;
 import org.neo4j.graphalgo.core.huge.HugeAdjacencyList;
 import org.neo4j.graphalgo.core.huge.HugeAdjacencyOffsets;
 import org.neo4j.graphalgo.core.huge.HugeGraphImpl;
-import org.neo4j.graphalgo.core.huge.HugeIdMap;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 
 import java.util.concurrent.locks.ReentrantLock;

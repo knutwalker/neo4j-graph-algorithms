@@ -16,7 +16,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package org.neo4j.graphalgo.core.huge;
+package org.neo4j.graphalgo.core.huge.loader;
 
 import org.neo4j.collection.primitive.PrimitiveLongIterable;
 import org.neo4j.collection.primitive.PrimitiveLongIterator;
@@ -24,7 +24,6 @@ import org.neo4j.graphalgo.api.HugeBatchNodeIterable;
 import org.neo4j.graphalgo.api.HugeIdMapping;
 import org.neo4j.graphalgo.api.HugeNodeIterator;
 import org.neo4j.graphalgo.core.utils.LazyBatchCollection;
-import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphalgo.core.utils.paged.HugeLongArray;
 import org.neo4j.graphalgo.core.utils.paged.SparseLongArray;
 
@@ -37,28 +36,17 @@ import java.util.function.LongPredicate;
  */
 public final class HugeIdMap implements HugeIdMapping, HugeNodeIterator, HugeBatchNodeIterable {
 
-    private long nextGraphId;
+    private long nodeCount;
     private HugeLongArray graphIds;
     private SparseLongArray nodeToGraphIds;
 
     /**
-     * initialize the map with maximum node capacity
+     * initialize the map with pre-built sub arrays
      */
-    HugeIdMap(long capacity, long fullCapacity, AllocationTracker tracker) {
-        graphIds = HugeLongArray.newArray(capacity, tracker);
-        nodeToGraphIds = SparseLongArray.newArray(fullCapacity, tracker);
-    }
-
-    HugeIdMap(HugeLongArray graphIds, SparseLongArray nodeToGraphIds, long nextGraphId) {
-        this.nextGraphId = nextGraphId;
+    HugeIdMap(HugeLongArray graphIds, SparseLongArray nodeToGraphIds, long nodeCount) {
+        this.nodeCount = nodeCount;
         this.graphIds = graphIds;
         this.nodeToGraphIds = nodeToGraphIds;
-    }
-
-    void add(long longValue) {
-        long internalId = nextGraphId++;
-        nodeToGraphIds.set(longValue, internalId);
-        graphIds.set(internalId, longValue);
     }
 
     @Override
@@ -78,7 +66,7 @@ public final class HugeIdMap implements HugeIdMapping, HugeNodeIterator, HugeBat
 
     @Override
     public long nodeCount() {
-        return nextGraphId;
+        return nodeCount;
     }
 
     @Override

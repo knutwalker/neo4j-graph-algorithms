@@ -47,23 +47,6 @@ abstract class AdjacencyBuilder {
 
     abstract Collection<Runnable> flushTasks();
 
-    static AdjacencyBuilder of(
-            HugeAdjacencyBuilder adjacency,
-            int numPages,
-            int pageSize,
-            AllocationTracker tracker) {
-        if (adjacency == null) {
-            return NoAdjacency.INSTANCE;
-        }
-        if (numPages == 1) {
-            return new SinglePagedAdjacency(adjacency, pageSize);
-        }
-        tracker.add(sizeOfObjectArray(numPages) << 1);
-        HugeAdjacencyBuilder[] builders = new HugeAdjacencyBuilder[numPages];
-        long[][] degrees = new long[numPages][];
-        return new PagedAdjacency(adjacency, builders, degrees, pageSize);
-    }
-
     static AdjacencyBuilder compressing(
             HugeAdjacencyBuilder adjacency,
             int numPages,
@@ -78,47 +61,6 @@ abstract class AdjacencyBuilder {
         LongsRef[] buffers = new LongsRef[numPages];
         long[][] degrees = new long[numPages][];
         return new CompressingPagedAdjacency(adjacency, builders, targets, buffers, degrees, pageSize);
-    }
-
-    private static final class PagedAdjacency extends AdjacencyBuilder {
-
-        private final HugeAdjacencyBuilder adjacency;
-        private final HugeAdjacencyBuilder[] builders;
-        private final long[][] degrees;
-        private final int pageSize;
-
-        private PagedAdjacency(
-                HugeAdjacencyBuilder adjacency,
-                HugeAdjacencyBuilder[] builders,
-                long[][] degrees,
-                int pageSize) {
-            this.adjacency = adjacency;
-            this.builders = builders;
-            this.degrees = degrees;
-            this.pageSize = pageSize;
-        }
-
-        @Override
-        void addAdjacencyImporter(AllocationTracker tracker, boolean loadDegrees, int pageIndex) {
-            tracker.add(sizeOfLongArray(pageSize));
-            long[] offsets = degrees[pageIndex] = new long[pageSize];
-            builders[pageIndex] = adjacency.threadLocalCopy(offsets, loadDegrees);
-            builders[pageIndex].prepare();
-        }
-
-        @Override
-        void finishPreparation() {
-            adjacency.setGlobalOffsets(HugeAdjacencyOffsets.of(degrees, pageSize));
-        }
-
-        @Override
-        void addAll(long[] batch, long[] targets, int[] offsets, int length, AllocationTracker tracker) {
-        }
-
-        @Override
-        Collection<Runnable> flushTasks() {
-            return Collections.emptyList();
-        }
     }
 
     private static final class CompressingPagedAdjacency extends AdjacencyBuilder {
@@ -245,44 +187,6 @@ abstract class AdjacencyBuilder {
                 }
             });
             return Arrays.asList(runnables);
-        }
-    }
-
-    private static final class SinglePagedAdjacency extends AdjacencyBuilder {
-
-        private final HugeAdjacencyBuilder adjacency;
-        private final int numberOfNodes;
-        private HugeAdjacencyBuilder builder;
-        private long[] degrees;
-
-        private SinglePagedAdjacency(
-                HugeAdjacencyBuilder adjacency,
-                int numberOfNodes) {
-            this.adjacency = adjacency;
-            this.numberOfNodes = numberOfNodes;
-        }
-
-        @Override
-        void addAdjacencyImporter(AllocationTracker tracker, boolean loadDegrees, int pageIndex) {
-            assert pageIndex == 0;
-            tracker.add(sizeOfLongArray(numberOfNodes));
-            long[] offsets = degrees = new long[numberOfNodes];
-            builder = adjacency.threadLocalCopy(offsets, loadDegrees);
-            builder.prepare();
-        }
-
-        @Override
-        void finishPreparation() {
-            adjacency.setGlobalOffsets(HugeAdjacencyOffsets.of(degrees));
-        }
-
-        @Override
-        void addAll(long[] batch, long[] targets, int[] offsets, int length, AllocationTracker tracker) {
-        }
-
-        @Override
-        Collection<Runnable> flushTasks() {
-            return Collections.emptyList();
         }
     }
 

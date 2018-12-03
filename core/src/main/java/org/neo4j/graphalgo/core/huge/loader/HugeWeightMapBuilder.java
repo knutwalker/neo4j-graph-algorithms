@@ -93,9 +93,13 @@ class HugeWeightMapBuilder {
             read.relationshipProperties(relationshipReference, propertiesReference, pc);
             double weight = ReadHelper.readProperty(pc, weightProperty, defaultWeight);
             if (weight != defaultWeight) {
-                page.put(localSource, target, weight);
+                addWeight(localSource, target, weight);
             }
         }
+    }
+
+    private synchronized void addWeight(int localIndex, long target, double weight) {
+        page.put(localIndex, target, weight);
     }
 
     static class NullBuilder extends HugeWeightMapBuilder {

@@ -26,6 +26,7 @@ import org.neo4j.graphalgo.api.RelationshipIntersect;
 import org.neo4j.graphalgo.api.HugeWeightMapping;
 import org.neo4j.graphalgo.api.RelationshipConsumer;
 import org.neo4j.graphalgo.api.WeightedRelationshipConsumer;
+import org.neo4j.graphalgo.core.huge.loader.HugeIdMap;
 import org.neo4j.graphalgo.core.utils.RawValues;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphdb.Direction;

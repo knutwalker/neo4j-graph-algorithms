@@ -26,7 +26,10 @@ final class ImportSizing {
     // 1B elements might even be too much as arrays need to be allocated with
     // a consecutive chunk of memory
     // possible idea: retry with lower batch sizes if alloc hits an OOM?
-    private static final long MAX_BATCH_SIZE = (long) previousPowerOfTwo(Integer.MAX_VALUE);
+    private static final long MAX_PAGE_SIZE = (long) previousPowerOfTwo(Integer.MAX_VALUE);
+
+    // don't attempt to page if the page size would be less than this value
+    private static final long MIN_PAGE_SIZE = 1024L;
 
     private static final String TOO_MANY_PAGES_REQUIRED =
             "Importing %d nodes would need %d arrays of %d-long nested arrays each, which cannot be created.";
@@ -53,18 +56,21 @@ final class ImportSizing {
         pageSize = previousPowerOfTwo(pageSize);
 
         // page size must fit in an integer
-        pageSize = Math.min(MAX_BATCH_SIZE, pageSize);
+        pageSize = Math.min(MAX_PAGE_SIZE, pageSize);
+
+        // don't import overly small pages
+        pageSize = Math.max(MIN_PAGE_SIZE, pageSize);
 
         // determine the actual number of pages required
         long numberOfPages = ceilDiv(nodeCount, pageSize);
 
         // if we need too many pages, try to increase the page size
-        while (numberOfPages > MAX_BATCH_SIZE && pageSize <= MAX_BATCH_SIZE) {
+        while (numberOfPages > MAX_PAGE_SIZE && pageSize <= MAX_PAGE_SIZE) {
             pageSize <<= 1L;
             numberOfPages = ceilDiv(nodeCount, pageSize);
         }
 
-        if (numberOfPages > MAX_BATCH_SIZE || pageSize > MAX_BATCH_SIZE) {
+        if (numberOfPages > MAX_PAGE_SIZE || pageSize > MAX_PAGE_SIZE) {
             throw new IllegalArgumentException(
                     String.format(TOO_MANY_PAGES_REQUIRED, nodeCount, numberOfPages, pageSize)
             );

@@ -24,6 +24,10 @@ import java.util.Arrays;
 import java.util.function.IntToLongFunction;
 import java.util.function.LongUnaryOperator;
 
+import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.shallowSizeOfInstance;
+import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfLongArray;
+import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfObjectArray;
+
 /**
  * A long-indexable version of a primitive long array ({@code long[]}) that can contain more than 2 bn. elements.
  * <p>
@@ -152,6 +156,15 @@ public abstract class HugeLongArray {
     abstract public Cursor cursor(Cursor cursor);
 
     /**
+     * Resets the {@link Cursor} to range from index {@code start} (inclusive, the first index to be contained)
+     * until {@code end} (exclusive, the first index not to be contained).
+     * The cursor is not positioned and all warning from obtaining a full-range cursor apply.
+     *
+     * @see HugeLongArray#cursor(Cursor)
+     */
+    abstract public Cursor cursor(Cursor cursor, long start, long end);
+
+    /**
      * Creates a new array if the given size, tracking the memory requirements into the given {@link AllocationTracker}.
      * The tracker is no longer referenced, as the arrays do not dynamically change their size.
      */
@@ -199,7 +212,7 @@ public abstract class HugeLongArray {
         /**
          * the offset into the array
          */
-        public final int offset = 0;
+        public int offset;
         /**
          * the limit of the array, exclusive – the first index not to be contained
          */
@@ -248,8 +261,8 @@ public abstract class HugeLongArray {
             final int intSize = (int) size;
             long[] page = new long[intSize];
 
-            tracker.add(MemoryUsage.shallowSizeOfInstance(HugeLongArray.class));
-            tracker.add(MemoryUsage.sizeOfLongArray(intSize));
+            tracker.add(shallowSizeOfInstance(HugeLongArray.class));
+            tracker.add(sizeOfLongArray(intSize));
 
             return new SingleHugeLongArray(intSize, page);
         }
@@ -343,7 +356,7 @@ public abstract class HugeLongArray {
         public long release() {
             if (page != null) {
                 page = null;
-                return MemoryUsage.sizeOfLongArray(size);
+                return sizeOfLongArray(size);
             }
             return 0L;
         }
@@ -360,6 +373,15 @@ public abstract class HugeLongArray {
             return cursor;
         }
 
+        @Override
+        public Cursor cursor(final Cursor cursor, final long start, final long end) {
+            assert start >= 0L && start < (long) size : "start expected to be in (0, " + size + ") but got " + start;
+            assert end >= start && end <= (long) size : "end expected to be in (" + start + ", " + size + ") but got " + end;
+            assert cursor instanceof SingleCursor;
+            ((SingleCursor) cursor).init((int) start, (int) end);
+            return cursor;
+        }
+
         private static final class SingleCursor extends Cursor {
 
             private boolean exhausted;
@@ -368,11 +390,16 @@ public abstract class HugeLongArray {
                 super();
                 this.array = page;
                 this.base = 0L;
-                this.limit = page.length;
             }
 
             private void init() {
+                init(0, array.length);
+            }
+
+            private void init(int start, int end) {
                 exhausted = false;
+                offset = start;
+                limit = end;
             }
 
             public final boolean next() {
@@ -399,20 +426,20 @@ public abstract class HugeLongArray {
         private static final long PAGE_MASK = (long) (PAGE_SIZE - 1);
 
         private static HugeLongArray of(long size, AllocationTracker tracker) {
-            int numPages = PageUtil.numPagesFor(size, PAGE_SHIFT, (int) PAGE_MASK);
+            int numPages = PageUtil.numPagesFor(size, PAGE_SHIFT, PAGE_MASK);
             long[][] pages = new long[numPages][];
 
-            long memoryUsed = MemoryUsage.sizeOfObjectArray(numPages);
-            final long pageBytes = MemoryUsage.sizeOfLongArray(PAGE_SIZE);
+            long memoryUsed = sizeOfObjectArray(numPages);
+            final long pageBytes = sizeOfLongArray(PAGE_SIZE);
             for (int i = 0; i < numPages - 1; i++) {
                 memoryUsed += pageBytes;
                 pages[i] = new long[PAGE_SIZE];
             }
             final int lastPageSize = indexInPage(size);
             pages[numPages - 1] = new long[lastPageSize];
-            memoryUsed += MemoryUsage.sizeOfLongArray(lastPageSize);
+            memoryUsed += sizeOfLongArray(lastPageSize);
 
-            tracker.add(MemoryUsage.shallowSizeOfInstance(HugeLongArray.class));
+            tracker.add(shallowSizeOfInstance(HugeLongArray.class));
             tracker.add(memoryUsed);
 
             return new PagedHugeLongArray(size, pages, memoryUsed);
@@ -552,6 +579,13 @@ public abstract class HugeLongArray {
             return cursor;
         }
 
+        @Override
+        public Cursor cursor(final Cursor cursor, final long start, final long end) {
+            assert cursor instanceof PagedCursor;
+            ((PagedCursor) cursor).init(start, end);
+            return cursor;
+        }
+
         private static int pageIndex(long index) {
             return (int) (index >>> PAGE_SHIFT);
         }
@@ -565,6 +599,7 @@ public abstract class HugeLongArray {
             private long[][] pages;
             private int maxPage;
             private long capacity;
+            private long end;
 
             private int page;
             private int fromPage;
@@ -577,11 +612,18 @@ public abstract class HugeLongArray {
             }
 
             private void init() {
-                fromPage = 0;
-                array = pages[0];
-                base = 0L;
-                limit = (int) Math.min(PAGE_SIZE, capacity);
+                init(0L, capacity);
+            }
+
+            private void init(long start, long end) {
+                fromPage = pageIndex(start);
+                maxPage = pageIndex(end);
+                array = pages[fromPage];
+                offset = indexInPage(start);
+                base = (long) fromPage << PAGE_SHIFT;
+                limit = (int) Math.min(PAGE_SIZE, end);
                 page = -1;
+                this.end = end;
             }
 
             public final boolean next() {
@@ -593,8 +635,9 @@ public abstract class HugeLongArray {
                     return false;
                 }
                 base += PAGE_SIZE;
+                offset = 0;
                 array = pages[current];
-                limit = array.length;
+                limit = current < maxPage ? array.length : indexInPage(end);
                 return true;
             }
 

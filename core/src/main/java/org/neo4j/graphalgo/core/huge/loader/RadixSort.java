@@ -37,33 +37,7 @@ public final class RadixSort {
         radixSort(data, copy, histogram, length, 0);
     }
 
-    public static void radixSort2(long[] data, long[] copy, int[] histogram, int length) {
-        int hlen = Math.min(HIST_SIZE, histogram.length - 1);
-        Arrays.fill(histogram, 0, hlen, 0);
-
-        int dlen = Math.min(length, Math.min(data.length, copy.length));
-        for (int i = 0; i < dlen; i += 4) {
-            histogram[1 + (int) (data[1 + i] & 0xFFL)] += 4;
-        }
-
-        for (int i = 0; i < hlen; ++i) {
-            histogram[i + 1] += histogram[i];
-        }
-
-        int out;
-        for (int i = 0; i < dlen; i += 4) {
-            out = histogram[(int) (data[1 + i] & 0xFFL)] += 4;
-            copy[out - 4] = data[1 + i];
-            copy[out - 3] = data[i];
-            copy[out - 2] = data[2 + i];
-            copy[out - 1] = data[3 + i];
-        }
-
-        System.arraycopy(copy, 0, data, 0, dlen);
-        radixSort(data, copy, histogram, length, RADIX);
-    }
-
-    private static void radixSort(long[] data, long[] copy, int[] histogram, int length, int shift) {
+    public static void radixSort(long[] data, long[] copy, int[] histogram, int length, int shift) {
         int hlen = Math.min(HIST_SIZE, histogram.length - 1);
         int dlen = Math.min(length, Math.min(data.length, copy.length));
 
@@ -106,5 +80,36 @@ public final class RadixSort {
             loMask <<= RADIX;
             hiMask <<= RADIX;
         }
+    }
+
+    public static void radixSort2(long[] data, long[] copy, int[] histogram, int length) {
+        radixSort2(data, copy, histogram, length, 0);
+    }
+
+    public static void radixSort2(long[] data, long[] copy, int[] histogram, int length, int shift) {
+        int hlen = Math.min(HIST_SIZE, histogram.length - 1);
+        int dlen = Math.min(length, Math.min(data.length, copy.length));
+        Arrays.fill(histogram, 0, hlen, 0);
+
+        long loMask = 0xFFL << shift;
+        for (int i = 0; i < dlen; i += 4) {
+            histogram[1 + (int) ((data[1 + i] & loMask) >>> shift)] += 4;
+        }
+
+        for (int i = 0; i < hlen; ++i) {
+            histogram[i + 1] += histogram[i];
+        }
+
+        int out;
+        for (int i = 0; i < dlen; i += 4) {
+            out = histogram[(int) ((data[1 + i] & loMask) >>> shift)] += 4;
+            copy[out - 4] = data[1 + i];
+            copy[out - 3] = data[i];
+            copy[out - 2] = data[2 + i];
+            copy[out - 1] = data[3 + i];
+        }
+
+        System.arraycopy(copy, 0, data, 0, dlen);
+        radixSort(data, copy, histogram, length, shift + RADIX);
     }
 }

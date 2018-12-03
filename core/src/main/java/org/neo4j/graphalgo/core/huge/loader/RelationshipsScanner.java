@@ -19,7 +19,6 @@
 package org.neo4j.graphalgo.core.huge.loader;
 
 import org.neo4j.graphalgo.api.GraphSetup;
-import org.neo4j.graphalgo.core.huge.HugeIdMap;
 import org.neo4j.graphalgo.core.utils.ImportProgress;
 import org.neo4j.graphalgo.core.utils.StatementAction;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
@@ -32,8 +31,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 
-interface RelationshipsScanner extends Runnable {
-    long relationshipsImported();
+final class RelationshipsScanner extends StatementAction implements RecordScanner {
 
     static ImportingThreadPool.CreateScanner of(
             GraphDatabaseAPI api,
@@ -46,18 +44,15 @@ interface RelationshipsScanner extends Runnable {
             WeightBuilder weights,
             AdjacencyBuilder outAdjacency,
             AdjacencyBuilder inAdjacency) {
-        final DefaultRelationshipsScanner.Imports imports = DefaultRelationshipsScanner.imports(setup, weights.loadsWeights());
+        final Imports imports = imports(setup, weights.loadsWeights());
         if (imports == null) {
-            return new NoScanner();
+            return ImportingThreadPool.createEmptyScanner();
         }
         final AdjacencyBuilder actualInAdjacency = setup.loadAsUndirected ? outAdjacency : inAdjacency;
-        return new DefaultRelationshipsScanner.Creator(
+        return new RelationshipsScanner.Creator(
                 api, progress, idMap, scanner, relType, tracker,
                 weights, outAdjacency, actualInAdjacency, imports);
     }
-}
-
-final class DefaultRelationshipsScanner extends StatementAction implements RelationshipsScanner {
 
     static final class Creator implements ImportingThreadPool.CreateScanner {
         private final GraphDatabaseAPI api;
@@ -95,10 +90,10 @@ final class DefaultRelationshipsScanner extends StatementAction implements Relat
         }
 
         @Override
-        public RelationshipsScanner create(final int index) {
-            return new DefaultRelationshipsScanner(
-                api, progress, idMap, scanner, relType, index,
-                tracker, weights, outAdjacency, inAdjacency, imports);
+        public RecordScanner create(final int index) {
+            return new RelationshipsScanner(
+                    api, progress, idMap, scanner, relType, index,
+                    tracker, weights, outAdjacency, inAdjacency, imports);
         }
 
         @Override
@@ -132,7 +127,7 @@ final class DefaultRelationshipsScanner extends StatementAction implements Relat
 
     private volatile long relationshipsImported;
 
-    private DefaultRelationshipsScanner(
+    private RelationshipsScanner(
             GraphDatabaseAPI api,
             ImportProgress progress,
             HugeIdMap idMap,
@@ -192,42 +187,42 @@ final class DefaultRelationshipsScanner extends StatementAction implements Relat
     }
 
     @Override
-    public long relationshipsImported() {
+    public long recordsImported() {
         return relationshipsImported;
     }
 
     interface Imports {
         int importRels(
-            RelationshipsBatchBuffer batches,
-            int batchLength,
-            WeightBuilder weights,
-            CursorFactory cursors,
-            Read read,
-            AllocationTracker tracker,
-            AdjacencyBuilder outAdjacency,
-            AdjacencyBuilder inAdjacency);
+                RelationshipsBatchBuffer batches,
+                int batchLength,
+                WeightBuilder weights,
+                CursorFactory cursors,
+                Read read,
+                AllocationTracker tracker,
+                AdjacencyBuilder outAdjacency,
+                AdjacencyBuilder inAdjacency);
     }
 
-    static Imports imports(GraphSetup setup, boolean loadWeights) {
+    private static Imports imports(GraphSetup setup, boolean loadWeights) {
         if (setup.loadAsUndirected) {
             return loadWeights
-                    ? DefaultRelationshipsScanner::importUndirectedWithWeight
-                    : DefaultRelationshipsScanner::importBothOrUndirected;
+                    ? RelationshipsScanner::importUndirectedWithWeight
+                    : RelationshipsScanner::importBothOrUndirected;
         }
         if (setup.loadOutgoing) {
             if (setup.loadIncoming) {
                 return loadWeights
-                        ? DefaultRelationshipsScanner::importBothWithWeight
-                        : DefaultRelationshipsScanner::importBothOrUndirected;
+                        ? RelationshipsScanner::importBothWithWeight
+                        : RelationshipsScanner::importBothOrUndirected;
             }
             return loadWeights
-                    ? DefaultRelationshipsScanner::importOutgoingWithWeight
-                    : DefaultRelationshipsScanner::importOutgoing;
+                    ? RelationshipsScanner::importOutgoingWithWeight
+                    : RelationshipsScanner::importOutgoing;
         }
         if (setup.loadIncoming) {
             return loadWeights
-                    ? DefaultRelationshipsScanner::importIncomingWithWeight
-                    : DefaultRelationshipsScanner::importIncoming;
+                    ? RelationshipsScanner::importIncomingWithWeight
+                    : RelationshipsScanner::importIncoming;
         }
 
         return null;
@@ -390,26 +385,5 @@ final class DefaultRelationshipsScanner extends StatementAction implements Relat
                     /* source */ batch[i],
                     /* target */ batch[1 + i]);
         }
-    }
-}
-
-final class NoScanner implements RelationshipsScanner, ImportingThreadPool.CreateScanner {
-    @Override
-    public long relationshipsImported() {
-        return 0L;
-    }
-
-    @Override
-    public void run() {
-    }
-
-    @Override
-    public RelationshipsScanner create(final int index) {
-        return this;
-    }
-
-    @Override
-    public Collection<Runnable> flushTasks() {
-        return Collections.emptyList();
     }
 }

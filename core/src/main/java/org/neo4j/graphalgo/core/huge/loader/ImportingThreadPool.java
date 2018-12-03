@@ -22,14 +22,19 @@ import org.neo4j.graphalgo.core.utils.ParallelUtil;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.concurrent.ExecutorService;
 
 final class ImportingThreadPool {
 
     interface CreateScanner {
-        RelationshipsScanner create(int index);
+        RecordScanner create(int index);
 
         Collection<Runnable> flushTasks();
+    }
+
+    static CreateScanner createEmptyScanner() {
+        return NoRecordsScanner.INSTANCE;
     }
 
     private final int numberOfThreads;
@@ -43,7 +48,7 @@ final class ImportingThreadPool {
     }
 
     ImportResult run(ExecutorService pool) {
-        Collection<RelationshipsScanner> tasks = new ArrayList<>(numberOfThreads);
+        Collection<RecordScanner> tasks = new ArrayList<>(numberOfThreads);
         for (int i = 0; i < numberOfThreads; i++) {
             tasks.add(createScanner.create(i));
         }
@@ -53,20 +58,43 @@ final class ImportingThreadPool {
         ParallelUtil.run(createScanner.flushTasks(), pool);
         long took = System.nanoTime() - scannerStart;
         long imported = 0L;
-        for (RelationshipsScanner task : tasks) {
-            imported += task.relationshipsImported();
+        for (RecordScanner task : tasks) {
+            imported += task.recordsImported();
         }
 
         return new ImportResult(took, imported);
     }
 
     static final class ImportResult {
-        final long tookInNanos;
-        final long relsImported;
+        final long tookNanos;
+        final long recordsImported;
 
-        ImportResult(long tookInNanos, long relsImported) {
-            this.tookInNanos = tookInNanos;
-            this.relsImported = relsImported;
+        ImportResult(long tookNanos, long recordsImported) {
+            this.tookNanos = tookNanos;
+            this.recordsImported = recordsImported;
+        }
+    }
+
+    private static final class NoRecordsScanner implements RecordScanner, ImportingThreadPool.CreateScanner {
+        private static final NoRecordsScanner INSTANCE = new NoRecordsScanner();
+
+        @Override
+        public long recordsImported() {
+            return 0L;
+        }
+
+        @Override
+        public void run() {
+        }
+
+        @Override
+        public RecordScanner create(final int index) {
+            return this;
+        }
+
+        @Override
+        public Collection<Runnable> flushTasks() {
+            return Collections.emptyList();
         }
     }
 }

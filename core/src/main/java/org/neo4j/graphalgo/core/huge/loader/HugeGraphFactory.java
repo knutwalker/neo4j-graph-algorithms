@@ -23,7 +23,6 @@ import org.neo4j.graphalgo.api.GraphSetup;
 import org.neo4j.graphalgo.api.HugeGraph;
 import org.neo4j.graphalgo.api.HugeWeightMapping;
 import org.neo4j.graphalgo.core.GraphDimensions;
-import org.neo4j.graphalgo.core.huge.HugeIdMap;
 import org.neo4j.graphalgo.core.utils.ApproximatedImportProgress;
 import org.neo4j.graphalgo.core.utils.ImportProgress;
 import org.neo4j.graphalgo.core.utils.ProgressLogger;
@@ -74,10 +73,17 @@ public final class HugeGraphFactory extends GraphFactory {
         GraphDimensions dimensions = this.dimensions;
         int concurrency = setup.concurrency();
         AllocationTracker tracker = setup.tracker;
-        HugeIdMap mapping = loadHugeIdMap(tracker);
+        HugeIdMap mapping = loadHugeIdMap(tracker, concurrency);
         HugeGraph graph = loadRelationships(dimensions, tracker, mapping, concurrency);
         progressLogger.logDone(tracker);
         return graph;
+    }
+
+    private HugeIdMap loadHugeIdMap(AllocationTracker tracker, int concurrency) {
+        return ScanningNodesImporter
+                .create(api, dimensions, progress, tracker, threadPool, concurrency)
+                .call(setup.log);
+
     }
 
     private HugeGraph loadRelationships(
@@ -103,7 +109,7 @@ public final class HugeGraphFactory extends GraphFactory {
                 ? new HugeWeightMapBuilder.NullBuilder(setup.relationDefaultWeight)
                 : new HugeWeightMapBuilder(tracker, weightProperty, setup.relationDefaultWeight);
 
-        Runnable importer = ScanningRelationshipImporter.create(
+        Runnable importer = ScanningRelationshipsImporter.create(
                 setup, api, dimensions, progress, tracker, mapping, weightsBuilder,
                 outAdjacency, inAdjacency, threadPool, LOAD_DEGREES, concurrency);
         importer.run();
