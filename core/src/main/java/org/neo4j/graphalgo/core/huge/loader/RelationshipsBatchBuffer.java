@@ -19,11 +19,11 @@
 package org.neo4j.graphalgo.core.huge.loader;
 
 import org.neo4j.graphalgo.api.HugeIdMapping;
+import org.neo4j.graphalgo.core.huge.loader.AbstractStorePageCacheScanner.RecordConsumer;
 import org.neo4j.kernel.impl.store.record.RelationshipRecord;
 
-import java.util.function.Predicate;
 
-final class RelationshipsBatchBuffer implements Predicate<RelationshipRecord> {
+final class RelationshipsBatchBuffer implements RecordConsumer<RelationshipRecord> {
 
     private final HugeIdMapping idMap;
     private final int type;
@@ -46,25 +46,28 @@ final class RelationshipsBatchBuffer implements Predicate<RelationshipRecord> {
         histogram = RadixSort.newHistogram(capacity);
     }
 
-    boolean scan(PageCacheScanner.Cursor cursor) {
-        length = cursor.bulkNext(buffer, this);
-        return length > 0;
+    boolean scan(RelationshipStoreScanner.Cursor cursor) {
+        length = 0;
+        return cursor.bulkNext(this) && length > 0;
     }
 
     @Override
-    public boolean test(final RelationshipRecord record) {
+    public void add(final RelationshipRecord record) {
         if ((type & record.getType()) == record.getType()) {
             long source = idMap.toHugeMappedNodeId(record.getFirstNode());
             if (source != -1L) {
                 long target = idMap.toHugeMappedNodeId(record.getSecondNode());
                 if (target != -1L) {
-                    record.setFirstNode(source);
-                    record.setSecondNode(target);
-                    return true;
+                    int position = this.length;
+                    long[] buffer = this.buffer;
+                    buffer[position] = source;
+                    buffer[1 + position] = target;
+                    buffer[2 + position] = record.getId();
+                    buffer[3 + position] = record.getNextProp();
+                    this.length = 4 + position;
                 }
             }
         }
-        return false;
     }
 
     long[] sortBySource() {

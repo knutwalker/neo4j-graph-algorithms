@@ -40,7 +40,7 @@ interface RelationshipsScanner extends Runnable {
             GraphSetup setup,
             ImportProgress progress,
             HugeIdMap idMap,
-            PageCacheScanner scanner,
+            RelationshipStoreScanner scanner,
             int relType,
             AllocationTracker tracker,
             WeightBuilder weights,
@@ -63,7 +63,7 @@ final class DefaultRelationshipsScanner extends StatementAction implements Relat
         private final GraphDatabaseAPI api;
         private final ImportProgress progress;
         private final HugeIdMap idMap;
-        private final PageCacheScanner scanner;
+        private final RelationshipStoreScanner scanner;
         private final int relType;
         private final AllocationTracker tracker;
         private final WeightBuilder weights;
@@ -75,7 +75,7 @@ final class DefaultRelationshipsScanner extends StatementAction implements Relat
                 GraphDatabaseAPI api,
                 ImportProgress progress,
                 HugeIdMap idMap,
-                PageCacheScanner scanner,
+                RelationshipStoreScanner scanner,
                 int relType,
                 AllocationTracker tracker,
                 WeightBuilder weights,
@@ -120,7 +120,7 @@ final class DefaultRelationshipsScanner extends StatementAction implements Relat
 
     private final ImportProgress progress;
     private final HugeIdMap idMap;
-    private final PageCacheScanner scanner;
+    private final RelationshipStoreScanner scanner;
     private final int relType;
     private final int scannerIndex;
 
@@ -136,7 +136,7 @@ final class DefaultRelationshipsScanner extends StatementAction implements Relat
             GraphDatabaseAPI api,
             ImportProgress progress,
             HugeIdMap idMap,
-            PageCacheScanner scanner,
+            RelationshipStoreScanner scanner,
             int relType,
             int threadIndex,
             AllocationTracker tracker,
@@ -168,7 +168,7 @@ final class DefaultRelationshipsScanner extends StatementAction implements Relat
     }
 
     private void scanRelationships(final Read read, final CursorFactory cursors) {
-        try (PageCacheScanner.Cursor cursor = scanner.getCursor()) {
+        try (RelationshipStoreScanner.Cursor cursor = scanner.getCursor()) {
             RelationshipsBatchBuffer batches = new RelationshipsBatchBuffer(idMap, relType, cursor.bulkSize());
 
             final WeightBuilder weights = this.weights;

@@ -102,7 +102,7 @@ abstract class ScanningRelationshipImporter implements Runnable {
         final ImportSizing sizing = ImportSizing.of(concurrency, nodeCount);
         int numberOfThreads = sizing.numberOfThreads();
 
-        PageCacheScanner scanner = PageCacheScanner.of(api);
+        RelationshipStoreScanner scanner = RelationshipStoreScanner.of(api);
         ImportingThreadPool.CreateScanner creator = createScanner(
                 nodeCount,
                 sizing.pageSize(),
@@ -137,7 +137,7 @@ abstract class ScanningRelationshipImporter implements Runnable {
             long nodeCount,
             int pageSize,
             int numberOfPages,
-            PageCacheScanner scanner) {
+            RelationshipStoreScanner scanner) {
         WeightBuilder weightBuilder = WeightBuilder.of(weights, numberOfPages, pageSize, nodeCount, tracker);
         AdjacencyBuilder outBuilder = AdjacencyBuilder.compressing(outAdjacency, numberOfPages, pageSize, tracker);
         AdjacencyBuilder inBuilder = AdjacencyBuilder.compressing(inAdjacency, numberOfPages, pageSize, tracker);
