@@ -46,7 +46,7 @@ final class RelationshipsBatchBuffer implements RecordConsumer<RelationshipRecor
         histogram = RadixSort.newHistogram(capacity);
     }
 
-    boolean scan(RelationshipStoreScanner.Cursor cursor) {
+    boolean scan(AbstractStorePageCacheScanner<RelationshipRecord>.Cursor cursor) {
         length = 0;
         return cursor.bulkNext(this) && length > 0;
     }

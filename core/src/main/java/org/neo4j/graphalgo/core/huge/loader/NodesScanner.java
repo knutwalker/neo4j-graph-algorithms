@@ -20,8 +20,10 @@ package org.neo4j.graphalgo.core.huge.loader;
 
 import org.neo4j.graphalgo.core.utils.ImportProgress;
 import org.neo4j.graphalgo.core.utils.StatementAction;
+import org.neo4j.graphalgo.core.utils.paged.HugeLongArrayBuilder;
 import org.neo4j.kernel.api.KernelTransaction;
 import org.neo4j.kernel.impl.store.NodeStore;
+import org.neo4j.kernel.impl.store.record.NodeRecord;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 
 import java.util.Collection;
@@ -31,36 +33,36 @@ final class NodesScanner extends StatementAction implements RecordScanner {
 
     static ImportingThreadPool.CreateScanner of(
             GraphDatabaseAPI api,
-            NodeStoreScanner scanner,
+            AbstractStorePageCacheScanner<NodeRecord> scanner,
             int label,
             ImportProgress progress,
-            HugeIdMapBuilder mapBuilder) {
-        return new NodesScanner.Creator(api, scanner, label, progress, mapBuilder);
+            HugeLongArrayBuilder idMapBuilder) {
+        return new NodesScanner.Creator(api, scanner, label, progress, idMapBuilder);
     }
 
     static final class Creator implements ImportingThreadPool.CreateScanner {
         private final GraphDatabaseAPI api;
-        private final NodeStoreScanner scanner;
+        private final AbstractStorePageCacheScanner<NodeRecord> scanner;
         private final int label;
         private final ImportProgress progress;
-        private final HugeIdMapBuilder mapBuilder;
+        private final HugeLongArrayBuilder idMapBuilder;
 
         Creator(
                 GraphDatabaseAPI api,
-                NodeStoreScanner scanner,
+                AbstractStorePageCacheScanner<NodeRecord> scanner,
                 int label,
                 ImportProgress progress,
-                HugeIdMapBuilder mapBuilder) {
+                HugeLongArrayBuilder idMapBuilder) {
             this.api = api;
             this.scanner = scanner;
             this.label = label;
             this.progress = progress;
-            this.mapBuilder = mapBuilder;
+            this.idMapBuilder = idMapBuilder;
         }
 
         @Override
         public RecordScanner create(final int index) {
-            return new NodesScanner(api, scanner, label, index, progress, mapBuilder);
+            return new NodesScanner(api, scanner, label, index, progress, idMapBuilder);
         }
 
         @Override
@@ -70,29 +72,29 @@ final class NodesScanner extends StatementAction implements RecordScanner {
     }
 
     private final NodeStore nodeStore;
-    private final NodeStoreScanner scanner;
+    private final AbstractStorePageCacheScanner<NodeRecord> scanner;
     private final int label;
     private final int scannerIndex;
     private final ImportProgress progress;
-    private final HugeIdMapBuilder mapBuilder;
+    private final HugeLongArrayBuilder idMapBuilder;
 
 
     private volatile long relationshipsImported;
 
     private NodesScanner(
             GraphDatabaseAPI api,
-            NodeStoreScanner scanner,
+            AbstractStorePageCacheScanner<NodeRecord> scanner,
             int label,
             int threadIndex,
             ImportProgress progress,
-            HugeIdMapBuilder mapBuilder) {
+            HugeLongArrayBuilder idMapBuilder) {
         super(api);
-        this.nodeStore = scanner.store();
+        this.nodeStore = (NodeStore) scanner.store();
         this.scanner = scanner;
         this.label = label;
         this.scannerIndex = threadIndex;
         this.progress = progress;
-        this.mapBuilder = mapBuilder;
+        this.idMapBuilder = idMapBuilder;
     }
 
     @Override
@@ -102,8 +104,9 @@ final class NodesScanner extends StatementAction implements RecordScanner {
 
     @Override
     public void accept(final KernelTransaction transaction) {
-        try (NodeStoreScanner.Cursor cursor = scanner.getCursor();
+        try (AbstractStorePageCacheScanner<NodeRecord>.Cursor cursor = scanner.getCursor();
              NodesBatchBuffer batches = new NodesBatchBuffer(nodeStore, label, cursor.bulkSize())) {
+
             final ImportProgress progress = this.progress;
             long allImported = 0L;
             while (batches.scan(cursor)) {
@@ -127,7 +130,7 @@ final class NodesScanner extends StatementAction implements RecordScanner {
             return 0;
         }
 
-        HugeIdMapBuilder.BulkAdder adder = mapBuilder.allocate((long) (batchLength));
+        HugeLongArrayBuilder.BulkAdder adder = idMapBuilder.allocate((long) (batchLength));
         if (adder == null) {
             return 0;
         }

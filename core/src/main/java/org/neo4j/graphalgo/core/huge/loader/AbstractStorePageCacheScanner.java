@@ -41,7 +41,7 @@ import java.util.function.Predicate;
 import static org.neo4j.kernel.impl.store.RecordPageLocationCalculator.offsetForId;
 
 
-public abstract class AbstractStorePageCacheScanner<Record extends AbstractBaseRecord> {
+public class AbstractStorePageCacheScanner<Record extends AbstractBaseRecord> {
 
     public static final int DEFAULT_PREFETCH_SIZE = 100;
 

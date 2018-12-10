@@ -19,99 +19,46 @@
 package org.neo4j.graphalgo.core.huge.loader;
 
 import org.neo4j.graphalgo.core.GraphDimensions;
-import org.neo4j.graphalgo.core.huge.loader.ImportingThreadPool.ImportResult;
 import org.neo4j.graphalgo.core.utils.ImportProgress;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
+import org.neo4j.graphalgo.core.utils.paged.HugeLongArrayBuilder;
+import org.neo4j.kernel.impl.store.record.NodeRecord;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
-import org.neo4j.logging.Log;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
-import java.math.RoundingMode;
 import java.util.concurrent.ExecutorService;
 
-import static org.neo4j.graphalgo.core.utils.paged.AllocationTracker.humanReadable;
 
+final class ScanningNodesImporter extends ScanningRecordsImporter<NodeRecord, HugeIdMap> {
 
-final class ScanningNodesImporter {
-
-    private final GraphDatabaseAPI api;
-    private final GraphDimensions dimensions;
     private final ImportProgress progress;
     private final AllocationTracker tracker;
-    private final ExecutorService threadPool;
-    private final int concurrency;
-    private static final BigInteger A_BILLION = BigInteger.valueOf(1_000_000_000L);
 
-    static ScanningNodesImporter create(
+    private HugeLongArrayBuilder idMapBuilder;
+
+    ScanningNodesImporter(
             GraphDatabaseAPI api,
             GraphDimensions dimensions,
             ImportProgress progress,
             AllocationTracker tracker,
             ExecutorService threadPool,
             int concurrency) {
-        return new ScanningNodesImporter(api, dimensions, progress, tracker, threadPool, concurrency);
-    }
-
-    private ScanningNodesImporter(
-            GraphDatabaseAPI api,
-            GraphDimensions dimensions,
-            ImportProgress progress,
-            AllocationTracker tracker,
-            ExecutorService threadPool,
-            int concurrency) {
-        this.api = api;
-        this.dimensions = dimensions;
+        super(NodeStoreScanner.NODE_ACCESS, "Node", api, dimensions, threadPool, concurrency);
         this.progress = progress;
         this.tracker = tracker;
-        this.threadPool = threadPool;
-        this.concurrency = concurrency;
     }
 
-    HugeIdMap call(Log log) {
-        long nodeCount = dimensions.hugeNodeCount();
-
-        final ImportSizing sizing = ImportSizing.of(concurrency, nodeCount);
-        int numberOfThreads = sizing.numberOfThreads();
-
-        NodeStoreScanner scanner = NodeStoreScanner.of(api);
-        HugeIdMapBuilder mapBuilder = createIdMapBuilder(nodeCount);
-        ImportingThreadPool.CreateScanner creator = createScanner(mapBuilder, scanner);
-
-        ImportingThreadPool pool = new ImportingThreadPool(numberOfThreads, creator);
-
-        ImportResult importResult = pool.run(threadPool);
-
-        long requiredBytes = scanner.storeSize();
-        long nodesImported = importResult.recordsImported;
-        BigInteger bigNanos = BigInteger.valueOf(importResult.tookNanos);
-        double tookInSeconds = new BigDecimal(bigNanos).divide(new BigDecimal(A_BILLION), 9, RoundingMode.CEILING).doubleValue();
-        long bytesPerSecond = A_BILLION.multiply(BigInteger.valueOf(requiredBytes)).divide(bigNanos).longValueExact();
-
-        log.info(
-                "Node Store Scan: Imported %,d records from %s (%,d bytes); took %.3f s, %,.2f records/s, %s/s (%,d bytes/s) (per thread: %,.2f records/s, %s/s (%,d bytes/s))",
-                nodesImported,
-                humanReadable(requiredBytes),
-                requiredBytes,
-                tookInSeconds,
-                (double) nodesImported / tookInSeconds,
-                humanReadable(bytesPerSecond),
-                bytesPerSecond,
-                (double) nodesImported / tookInSeconds / numberOfThreads,
-                humanReadable(bytesPerSecond / numberOfThreads),
-                bytesPerSecond / numberOfThreads
-        );
-
-        return mapBuilder.build(dimensions.allNodesCount());
+    @Override
+    ImportingThreadPool.CreateScanner creator(
+            long nodeCount,
+            ImportSizing sizing,
+            AbstractStorePageCacheScanner<NodeRecord> scanner) {
+        idMapBuilder = HugeLongArrayBuilder.of(nodeCount, tracker);
+        return NodesScanner.of(api, scanner, dimensions.labelId(), progress, idMapBuilder);
     }
 
-    private HugeIdMapBuilder createIdMapBuilder(final long nodeCount) {
-        return HugeIdMapBuilder.of(nodeCount, tracker);
+    @Override
+    HugeIdMap build() {
+        return HugeIdMapBuilder.build(idMapBuilder, dimensions.allNodesCount(), tracker);
     }
 
-    private ImportingThreadPool.CreateScanner createScanner(
-            HugeIdMapBuilder mapBuilder,
-            NodeStoreScanner scanner) {
-        return NodesScanner.of(api, scanner, dimensions.labelId(), progress, mapBuilder);
-    }
 }

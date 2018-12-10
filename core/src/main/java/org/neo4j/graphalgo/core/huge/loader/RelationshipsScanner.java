@@ -19,12 +19,14 @@
 package org.neo4j.graphalgo.core.huge.loader;
 
 import org.neo4j.graphalgo.api.GraphSetup;
+import org.neo4j.graphalgo.api.HugeIdMapping;
 import org.neo4j.graphalgo.core.utils.ImportProgress;
 import org.neo4j.graphalgo.core.utils.StatementAction;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.internal.kernel.api.CursorFactory;
 import org.neo4j.internal.kernel.api.Read;
 import org.neo4j.kernel.api.KernelTransaction;
+import org.neo4j.kernel.impl.store.record.RelationshipRecord;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 
 import java.util.ArrayList;
@@ -37,8 +39,8 @@ final class RelationshipsScanner extends StatementAction implements RecordScanne
             GraphDatabaseAPI api,
             GraphSetup setup,
             ImportProgress progress,
-            HugeIdMap idMap,
-            RelationshipStoreScanner scanner,
+            HugeIdMapping idMap,
+            AbstractStorePageCacheScanner<RelationshipRecord> scanner,
             int relType,
             AllocationTracker tracker,
             WeightBuilder weights,
@@ -57,8 +59,8 @@ final class RelationshipsScanner extends StatementAction implements RecordScanne
     static final class Creator implements ImportingThreadPool.CreateScanner {
         private final GraphDatabaseAPI api;
         private final ImportProgress progress;
-        private final HugeIdMap idMap;
-        private final RelationshipStoreScanner scanner;
+        private final HugeIdMapping idMap;
+        private final AbstractStorePageCacheScanner<RelationshipRecord> scanner;
         private final int relType;
         private final AllocationTracker tracker;
         private final WeightBuilder weights;
@@ -69,8 +71,8 @@ final class RelationshipsScanner extends StatementAction implements RecordScanne
         Creator(
                 GraphDatabaseAPI api,
                 ImportProgress progress,
-                HugeIdMap idMap,
-                RelationshipStoreScanner scanner,
+                HugeIdMapping idMap,
+                AbstractStorePageCacheScanner<RelationshipRecord> scanner,
                 int relType,
                 AllocationTracker tracker,
                 WeightBuilder weights,
@@ -114,8 +116,8 @@ final class RelationshipsScanner extends StatementAction implements RecordScanne
     }
 
     private final ImportProgress progress;
-    private final HugeIdMap idMap;
-    private final RelationshipStoreScanner scanner;
+    private final HugeIdMapping idMap;
+    private final AbstractStorePageCacheScanner<RelationshipRecord> scanner;
     private final int relType;
     private final int scannerIndex;
 
@@ -130,8 +132,8 @@ final class RelationshipsScanner extends StatementAction implements RecordScanne
     private RelationshipsScanner(
             GraphDatabaseAPI api,
             ImportProgress progress,
-            HugeIdMap idMap,
-            RelationshipStoreScanner scanner,
+            HugeIdMapping idMap,
+            AbstractStorePageCacheScanner<RelationshipRecord> scanner,
             int relType,
             int threadIndex,
             AllocationTracker tracker,
@@ -163,7 +165,7 @@ final class RelationshipsScanner extends StatementAction implements RecordScanne
     }
 
     private void scanRelationships(final Read read, final CursorFactory cursors) {
-        try (RelationshipStoreScanner.Cursor cursor = scanner.getCursor()) {
+        try (AbstractStorePageCacheScanner<RelationshipRecord>.Cursor cursor = scanner.getCursor()) {
             RelationshipsBatchBuffer batches = new RelationshipsBatchBuffer(idMap, relType, cursor.bulkSize());
 
             final WeightBuilder weights = this.weights;

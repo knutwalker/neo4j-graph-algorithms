@@ -80,10 +80,8 @@ public final class HugeGraphFactory extends GraphFactory {
     }
 
     private HugeIdMap loadHugeIdMap(AllocationTracker tracker, int concurrency) {
-        return ScanningNodesImporter
-                .create(api, dimensions, progress, tracker, threadPool, concurrency)
+        return new ScanningNodesImporter(api, dimensions, progress, tracker, threadPool, concurrency)
                 .call(setup.log);
-
     }
 
     private HugeGraph loadRelationships(
@@ -109,10 +107,10 @@ public final class HugeGraphFactory extends GraphFactory {
                 ? new HugeWeightMapBuilder.NullBuilder(setup.relationDefaultWeight)
                 : new HugeWeightMapBuilder(tracker, weightProperty, setup.relationDefaultWeight);
 
-        Runnable importer = ScanningRelationshipsImporter.create(
+        new ScanningRelationshipsImporter(
                 setup, api, dimensions, progress, tracker, mapping, weightsBuilder,
-                outAdjacency, inAdjacency, threadPool, LOAD_DEGREES, concurrency);
-        importer.run();
+                LOAD_DEGREES, outAdjacency, inAdjacency, threadPool, concurrency)
+                .call(setup.log);
 
         HugeWeightMapping weights = weightsBuilder.build();
         return HugeAdjacencyBuilder.apply(tracker, mapping, weights, inAdjacency, outAdjacency);

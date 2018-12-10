@@ -28,43 +28,32 @@ import org.neo4j.kernel.impl.store.record.DynamicRecord;
 import org.neo4j.kernel.impl.store.record.NodeRecord;
 import org.neo4j.storageengine.api.StorageStatement.Nodes;
 
+
 final class NodesBatchBuffer implements RecordConsumer<NodeRecord>, AutoCloseable {
 
     private final int label;
     private final RecordCursor<DynamicRecord> labelCursor;
 
-    private final long[] buffer;
-    // 4-long blocks for each rel
-    // id, next-rel, is-dense, prop-id
-//    private final long[] extraData;
-
+    // node ids, consecutive
     private int length;
-//    private int extraLength;
+    private final long[] buffer;
 
     NodesBatchBuffer(final Nodes store, final int label, int capacity) {
         this.label = label;
         this.labelCursor = label != Read.ANY_LABEL ? store.newLabelCursor() : null;
         this.buffer = new long[capacity];
-//        this.extraData = new long[Math.multiplyExact(3, capacity)];
     }
 
-    boolean scan(NodeStoreScanner.Cursor cursor) {
+    boolean scan(AbstractStorePageCacheScanner<NodeRecord>.Cursor cursor) {
         length = 0;
-//        extraLength = 0;
         return cursor.bulkNext(this) && length > 0;
     }
 
     @Override
     public void add(final NodeRecord record) {
         if (hasCorrectLabel(record)) {
-            buffer[length++] = record.getId();
-            // TODO: load and work with extra data
-//            long[] buffer = this.extraData;
-//            int position = this.extraLength;
-//            buffer[position] = record.getNextRel();
-//            buffer[1 + position] = record.isDense() ? 1L : 0L; // TODO: compress - GroupReferenceEncoding/RelationshipReferenceEncoding
-//            buffer[2 + position] = record.getNextProp();
-//            this.extraLength = 3 + position;
+            int len = length++;
+            buffer[len] = record.getId();
         }
     }
 
@@ -97,10 +86,6 @@ final class NodesBatchBuffer implements RecordConsumer<NodeRecord>, AutoCloseabl
     long[] batch() {
         return buffer;
     }
-
-//    long[] spareLongs() {
-//        return extraData;
-//    }
 
     @Override
     public void close() {
