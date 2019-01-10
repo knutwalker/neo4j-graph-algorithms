@@ -419,7 +419,7 @@ public abstract class HugeLongArray {
         }
     }
 
-    public static final class PagedHugeLongArray extends HugeLongArray {
+    private static final class PagedHugeLongArray extends HugeLongArray {
 
         private static final int PAGE_SHIFT = 14;
         private static final int PAGE_SIZE = 1 << PAGE_SHIFT;
@@ -435,7 +435,7 @@ public abstract class HugeLongArray {
                 memoryUsed += pageBytes;
                 pages[i] = new long[PAGE_SIZE];
             }
-            final int lastPageSize = indexInPage(size);
+            final int lastPageSize = exclusiveIndexOfPage(size);
             pages[numPages - 1] = new long[lastPageSize];
             memoryUsed += sizeOfLongArray(lastPageSize);
 
@@ -594,20 +594,22 @@ public abstract class HugeLongArray {
             return (int) (index & PAGE_MASK);
         }
 
+        private static int exclusiveIndexOfPage(long index) {
+            return 1 + (int) ((index - 1L) & PAGE_MASK);
+        }
+
         private static final class PagedCursor extends Cursor {
 
             private long[][] pages;
+            private int pageIndex;
+            private int fromPage;
             private int maxPage;
             private long capacity;
             private long end;
 
-            private int page;
-            private int fromPage;
-
             private PagedCursor(final long capacity, final long[][] pages) {
                 super();
                 this.capacity = capacity;
-                this.maxPage = pages.length - 1;
                 this.pages = pages;
             }
 
@@ -617,27 +619,26 @@ public abstract class HugeLongArray {
 
             private void init(long start, long end) {
                 fromPage = pageIndex(start);
-                maxPage = pageIndex(end);
-                array = pages[fromPage];
-                offset = indexInPage(start);
-                base = (long) fromPage << PAGE_SHIFT;
-                limit = (int) Math.min(PAGE_SIZE, end);
-                page = -1;
+                maxPage = pageIndex(end - 1L);
+                pageIndex = fromPage - 1;
                 this.end = end;
+                base = (long) fromPage << PAGE_SHIFT;
+                offset = indexInPage(start);
+                limit = fromPage == maxPage ? exclusiveIndexOfPage(end) : PAGE_SIZE;
             }
 
             public final boolean next() {
-                int current = ++page;
-                if (current == fromPage) {
-                    return true;
-                }
+                int current = ++pageIndex;
                 if (current > maxPage) {
                     return false;
                 }
+                array = pages[current];
+                if (current == fromPage) {
+                    return true;
+                }
                 base += PAGE_SIZE;
                 offset = 0;
-                array = pages[current];
-                limit = current < maxPage ? array.length : indexInPage(end);
+                limit = current == maxPage ? exclusiveIndexOfPage(end) : array.length;
                 return true;
             }
 
@@ -646,11 +647,12 @@ public abstract class HugeLongArray {
                 array = null;
                 pages = null;
                 base = 0L;
+                end = 0L;
                 limit = 0;
                 capacity = 0L;
                 maxPage = -1;
                 fromPage = -1;
-                page = -1;
+                pageIndex = -1;
             }
         }
     }
