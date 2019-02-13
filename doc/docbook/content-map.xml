@@ -32,6 +32,8 @@
       </d:tocentry>
       <d:tocentry linkend="algorithms-triangle-count-clustering-coefficient"><?dbhtml filename="algorithms/triangle-counting-clustering-coefficient/index.html"?>
       </d:tocentry>
+      <d:tocentry linkend="algorithms-balanced-triads"><?dbhtml filename="algorithms/balanced-triads/index.html"?>
+      </d:tocentry>
     </d:tocentry>
 
     <d:tocentry linkend="algorithms-path-finding"><?dbhtml filename="algorithms/pathfinding/index.html"?>
@@ -56,9 +58,20 @@
       </d:tocentry>
       <d:tocentry linkend="algorithms-similarity-cosine"><?dbhtml filename="algorithms/similarity-cosine/index.html"?>
       </d:tocentry>
+      <d:tocentry linkend="algorithms-similarity-pearson"><?dbhtml filename="algorithms/similarity-pearson/index.html"?>
+      </d:tocentry>
       <d:tocentry linkend="algorithms-similarity-euclidean"><?dbhtml filename="algorithms/similarity-euclidean/index.html"?>
       </d:tocentry>
       <d:tocentry linkend="algorithms-similarity-overlap"><?dbhtml filename="algorithms/similarity-overlap/index.html"?>
+      </d:tocentry>
+    </d:tocentry>
+
+    <d:tocentry linkend="algorithms-linkprediction"><?dbhtml filename="algorithms/linkprediction/index.html"?>
+      <d:tocentry linkend="algorithms-linkprediction-adamic-adar"><?dbhtml filename="algorithms/linkprediction-adamic-adar/index.html"?>
+      </d:tocentry>
+      <d:tocentry linkend="algorithms-linkprediction-common-neighbors"><?dbhtml filename="algorithms/linkprediction-common-neighbors/index.html"?>
+      </d:tocentry>
+      <d:tocentry linkend="algorithms-linkprediction-resource-allocation"><?dbhtml filename="algorithms/linkprediction-resource-allocation/index.html"?>
       </d:tocentry>
     </d:tocentry>
 

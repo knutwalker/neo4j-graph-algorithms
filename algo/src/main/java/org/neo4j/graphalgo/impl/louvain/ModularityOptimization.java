@@ -18,9 +18,9 @@
  */
 package org.neo4j.graphalgo.impl.louvain;
 
+import com.carrotsearch.hppc.*;
 import com.carrotsearch.hppc.BitSet;
-import com.carrotsearch.hppc.IntIntMap;
-import com.carrotsearch.hppc.IntIntScatterMap;
+import com.carrotsearch.hppc.cursors.IntDoubleCursor;
 import org.neo4j.collection.primitive.PrimitiveIntIterator;
 import org.neo4j.graphalgo.api.Graph;
 import org.neo4j.graphalgo.api.NodeIterator;
@@ -29,13 +29,12 @@ import org.neo4j.graphalgo.core.sources.ShuffledNodeIterator;
 import org.neo4j.graphalgo.core.utils.ParallelUtil;
 import org.neo4j.graphalgo.core.utils.Pointer;
 import org.neo4j.graphalgo.core.utils.ProgressLogger;
+import org.neo4j.graphalgo.core.utils.TerminationFlag;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphalgo.impl.Algorithm;
 import org.neo4j.graphdb.Direction;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntConsumer;
@@ -147,28 +146,6 @@ public class ModularityOptimization extends Algorithm<ModularityOptimization> {
     }
 
     /**
-     * normalize nodeToCommunity-Array. Maps community IDs
-     * in a sequential order starting at 0.
-     *
-     * @param communities
-     * @return number of communities
-     */
-    static int normalize(int[] communities) {
-        final IntIntMap map = new IntIntScatterMap(communities.length);
-        int c = 0;
-        for (int i = 0; i < communities.length; i++) {
-            int mapped, community = communities[i];
-            if ((mapped = map.getOrDefault(community, -1)) != -1) {
-                communities[i] = mapped;
-            } else {
-                map.put(community, c);
-                communities[i] = c++;
-            }
-        }
-        return c;
-    }
-
-    /**
      * init ki (sum of weights of node) & m
      */
     private void init() {
@@ -194,6 +171,7 @@ public class ModularityOptimization extends Algorithm<ModularityOptimization> {
      * @return
      */
     public ModularityOptimization compute(int maxIterations) {
+        final TerminationFlag terminationFlag = getTerminationFlag();
         // init helper values & initial community structure
         init();
         // create an array of tasks for parallel exec
@@ -204,7 +182,7 @@ public class ModularityOptimization extends Algorithm<ModularityOptimization> {
         // (2x double + 1x int) * N * threads
         tracker.add(20 * nodeCount * concurrency);
         // as long as maxIterations is not reached
-        for (iterations = 0; iterations < maxIterations; iterations++) {
+        for (iterations = 0; iterations < maxIterations && terminationFlag.running(); iterations++) {
             // reset node counter (for logging)
             counter.set(0);
             // run all tasks
@@ -291,6 +269,7 @@ public class ModularityOptimization extends Algorithm<ModularityOptimization> {
 
         final double[] sTot, sIn;
         final int[] localCommunities;
+        private final TerminationFlag terminationFlag;
         double bestGain, bestWeight, q = MINIMUM_MODULARITY;
         int bestCommunity;
         boolean improvement = false;
@@ -300,6 +279,7 @@ public class ModularityOptimization extends Algorithm<ModularityOptimization> {
          * and initializes its helper arrays
          */
         Task() {
+            terminationFlag = getTerminationFlag();
             sTot = new double[nodeCount];
             System.arraycopy(ki, 0, sTot, 0, nodeCount); // ki -> sTot
             localCommunities = new int[nodeCount];
@@ -331,7 +311,7 @@ public class ModularityOptimization extends Algorithm<ModularityOptimization> {
                         counter.getAndIncrement(),
                         denominator,
                         () -> String.format("round %d", iterations + 1));
-                return true;
+                return terminationFlag.running();
             });
             this.q = calcModularity();
         }
@@ -351,45 +331,58 @@ public class ModularityOptimization extends Algorithm<ModularityOptimization> {
          */
         private boolean move(int node) {
             final int currentCommunity = bestCommunity = localCommunities[node];
-            final double w = weightIntoCom(node, currentCommunity);
+
+            int degree = graph.degree(node, D);
+            int[] communitiesInOrder = new int[degree];
+            IntDoubleMap communityWeights = new IntDoubleHashMap(degree);
+
+            final int[] communityCount = {0};
+            graph.forEachRelationship(node, D, (s, t, r) -> {
+                double weight = graph.weightOf(s, t);
+                int localCommunity = localCommunities[t];
+                if (communityWeights.containsKey(localCommunity)) {
+                    communityWeights.addTo(localCommunity, weight);
+                } else {
+                    communityWeights.put(localCommunity, weight);
+                    communitiesInOrder[communityCount[0]++] = localCommunity;
+                }
+
+                return true;
+            });
+
+            final double w = communityWeights.get(currentCommunity);
             sTot[currentCommunity] -= ki[node];
             sIn[currentCommunity] -= 2 * (w + nodeWeights.weightOf(node));
+
+            removeWeightForSelfRelationships(node, communityWeights);
+
             localCommunities[node] = NONE;
             bestGain = .0;
             bestWeight = w;
-            forEachConnectedCommunity(node, c -> {
-                final double wic = weightIntoCom(node, c);
-                final double g = wic / m2 - sTot[c] * ki[node] / m22;
+
+            for (int i = 0; i < communityCount[0]; i++) {
+                int community = communitiesInOrder[i];
+                double wic = communityWeights.get(community);
+                final double g = wic / m2 - sTot[community] * ki[node] / m22;
                 if (g > bestGain) {
                     bestGain = g;
-                    bestCommunity = c;
+                    bestCommunity = community;
                     bestWeight = wic;
                 }
-            });
+            }
+
             sTot[bestCommunity] += ki[node];
             sIn[bestCommunity] += 2 * (bestWeight + nodeWeights.weightOf(node));
             localCommunities[node] = bestCommunity;
             return bestCommunity != currentCommunity;
         }
 
-        /**
-         * apply consumer to each connected community one time
-         *
-         * @param node     node nodeId
-         * @param consumer community nodeId consumer
-         */
-        private void forEachConnectedCommunity(int node, IntConsumer consumer) {
-            final BitSet visited = new BitSet(nodeCount);
+        private void removeWeightForSelfRelationships(int node, IntDoubleMap communityWeights) {
             graph.forEachRelationship(node, D, (s, t, r) -> {
-                final int c = localCommunities[t];
-                if (c == NONE) {
-                    return true;
+                if(s == t) {
+                    double currentWeight = communityWeights.get(localCommunities[s]);
+                    communityWeights.put(localCommunities[s], currentWeight - graph.weightOf(s, t));
                 }
-                if (visited.get(c)) {
-                    return true;
-                }
-                visited.set(c);
-                consumer.accept(c);
                 return true;
             });
         }
@@ -402,14 +395,14 @@ public class ModularityOptimization extends Algorithm<ModularityOptimization> {
          * @return sum of weights from node into community c
          */
         private double weightIntoCom(int node, int c) {
-            final Pointer.DoublePointer p = Pointer.wrap(.0);
+            double[] p = new double[1];
             graph.forEachRelationship(node, D, (s, t, r) -> {
                 if (localCommunities[t] == c) {
-                    p.map(v -> v + graph.weightOf(s, t));
+                    p[0] += graph.weightOf(s, t);
                 }
                 return true;
             });
-            return p.v;
+            return p[0];
         }
 
         private double calcModularity() {

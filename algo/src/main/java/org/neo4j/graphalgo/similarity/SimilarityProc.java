@@ -1,3 +1,21 @@
+/**
+ * Copyright (c) 2017 "Neo4j, Inc." <http://neo4j.com>
+ *
+ * This file is part of Neo4j Graph Algorithms <http://github.com/neo4j-contrib/neo4j-graph-algorithms>.
+ *
+ * Neo4j Graph Algorithms is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 package org.neo4j.graphalgo.similarity;
 
 import com.carrotsearch.hppc.LongDoubleHashMap;
@@ -12,7 +30,6 @@ import org.neo4j.graphalgo.core.utils.Pools;
 import org.neo4j.graphalgo.core.utils.QueueBasedSpliterator;
 import org.neo4j.graphalgo.core.utils.TerminationFlag;
 import org.neo4j.graphalgo.impl.util.TopKConsumer;
-import org.neo4j.graphalgo.impl.yens.SimilarityExporter;
 import org.neo4j.graphdb.Result;
 import org.neo4j.kernel.api.KernelTransaction;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
@@ -30,7 +47,7 @@ import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import static org.neo4j.graphalgo.impl.util.TopKConsumer.topK;
-import static org.neo4j.graphalgo.similarity.RleTransformer.REPEAT_CUTOFF;
+import static org.neo4j.graphalgo.similarity.Weights.REPEAT_CUTOFF;
 import static org.neo4j.helpers.collection.MapUtil.map;
 
 public class SimilarityProc {
@@ -75,10 +92,12 @@ public class SimilarityProc {
         return configuration.get("degreeCutoff", 0L);
     }
 
-    Stream<SimilaritySummaryResult> writeAndAggregateResults(ProcedureConfiguration configuration, Stream<SimilarityResult> stream, int length, boolean write, String defaultWriteProperty) {
-        String writeRelationshipType = configuration.get("writeRelationshipType", defaultWriteProperty);
-        String writeProperty = configuration.getWriteProperty("score");
+    Long getWriteBatchSize(ProcedureConfiguration configuration) {
+        return configuration.get("writeBatchSize", 10000L);
+    }
 
+    Stream<SimilaritySummaryResult> writeAndAggregateResults(Stream<SimilarityResult> stream, int length, ProcedureConfiguration configuration, boolean write, String writeRelationshipType, String writeProperty) {
+        long writeBatchSize = getWriteBatchSize(configuration);
         AtomicLong similarityPairs = new AtomicLong();
         DoubleHistogram histogram = new DoubleHistogram(5);
         Consumer<SimilarityResult> recorder = result -> {
@@ -88,12 +107,17 @@ public class SimilarityProc {
 
         if (write) {
             SimilarityExporter similarityExporter = new SimilarityExporter(api, writeRelationshipType, writeProperty);
-            similarityExporter.export(stream.peek(recorder));
+            similarityExporter.export(stream.peek(recorder), writeBatchSize);
         } else {
             stream.forEach(recorder);
         }
 
         return Stream.of(SimilaritySummaryResult.from(length, similarityPairs, writeRelationshipType, writeProperty, write, histogram));
+    }
+
+    Stream<SimilaritySummaryResult> emptyStream(String writeRelationshipType, String writeProperty) {
+        return Stream.of(SimilaritySummaryResult.from(0, new AtomicLong(0), writeRelationshipType,
+                writeProperty, false, new DoubleHistogram(5)));
     }
 
     Double getSimilarityCutoff(ProcedureConfiguration configuration) {
@@ -222,15 +246,15 @@ public class SimilarityProc {
 
     WeightedInput[] prepareWeights(Object rawData, ProcedureConfiguration configuration, Double skipValue) throws Exception {
         if (ProcedureConstants.CYPHER_QUERY.equals(configuration.getGraphName("dense"))) {
-            if (skipValue == null) {
-                throw new IllegalArgumentException("Must specify 'skipValue' when using {graph: 'cypher'}");
-            }
-
-            return prepareSparseWeights(api, (String) rawData, configuration.getParams(), getDegreeCutoff(configuration), skipValue);
+            return prepareSparseWeights(api, (String) rawData,  skipValue, configuration);
         } else {
             List<Map<String, Object>> data = (List<Map<String, Object>>) rawData;
             return preparseDenseWeights(data, getDegreeCutoff(configuration), skipValue);
         }
+    }
+
+    Double readSkipValue(ProcedureConfiguration configuration) {
+        return configuration.get("skipValue", Double.NaN);
     }
 
     WeightedInput[] preparseDenseWeights(List<Map<String, Object>> data, long degreeCutoff, Double skipValue) {
@@ -251,7 +275,11 @@ public class SimilarityProc {
         return inputs;
     }
 
-    WeightedInput[] prepareSparseWeights(GraphDatabaseAPI api, String query, Map<String, Object> params, long degreeCutoff, Double skipValue) throws Exception {
+    WeightedInput[] prepareSparseWeights(GraphDatabaseAPI api, String query, Double skipValue, ProcedureConfiguration configuration) throws Exception {
+        Map<String, Object> params = configuration.getParams();
+        Long degreeCutoff = getDegreeCutoff(configuration);
+        int repeatCutoff = configuration.get("sparseVectorRepeatCutoff", REPEAT_CUTOFF).intValue();
+
         Result result = api.execute(query, params);
 
         Map<Long, LongDoubleMap> map = new HashMap<>();
@@ -284,7 +312,7 @@ public class SimilarityProc {
                 }
                 int size = weightsList.size();
                 int nonSkipSize = sparseWeights.size();
-                double[] weights = Weights.buildRleWeights(weightsList, REPEAT_CUTOFF);
+                double[] weights = Weights.buildRleWeights(weightsList, repeatCutoff);
 
                 inputs[idx++] = WeightedInput.sparse(item, weights, size, nonSkipSize);
             }
@@ -317,20 +345,26 @@ public class SimilarityProc {
         return valueList;
     }
 
-    protected int getTopK(ProcedureConfiguration configuration) {
+    int getTopK(ProcedureConfiguration configuration) {
         return configuration.getInt("topK", 0);
     }
 
-    protected int getTopN(ProcedureConfiguration configuration) {
+    int getTopN(ProcedureConfiguration configuration) {
         return configuration.getInt("top", 0);
     }
 
-    protected Supplier<RleDecoder> createDecoderFactory(String graphType, int size) {
+    private Supplier<RleDecoder> createDecoderFactory(String graphType, int size) {
         if(ProcedureConstants.CYPHER_QUERY.equals(graphType)) {
             return () -> new RleDecoder(size);
         }
 
         return () -> null;
+    }
+
+
+    Supplier<RleDecoder> createDecoderFactory(ProcedureConfiguration configuration, WeightedInput input) {
+        int size = input.initialSize;
+        return createDecoderFactory(configuration.getGraphName("dense"), size);
     }
 
     interface SimilarityComputer<T> {

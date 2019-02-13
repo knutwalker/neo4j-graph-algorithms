@@ -18,14 +18,10 @@
  */
 package org.neo4j.graphalgo;
 
-import com.carrotsearch.hppc.IntSet;
-import com.carrotsearch.hppc.ObjectArrayList;
-import com.carrotsearch.hppc.cursors.IntCursor;
 import org.neo4j.graphalgo.api.Graph;
 import org.neo4j.graphalgo.api.HugeGraph;
 import org.neo4j.graphalgo.core.GraphLoader;
 import org.neo4j.graphalgo.core.ProcedureConfiguration;
-import org.neo4j.graphalgo.core.neo4jview.DirectIdMapping;
 import org.neo4j.graphalgo.core.utils.Pools;
 import org.neo4j.graphalgo.core.utils.ProgressLogger;
 import org.neo4j.graphalgo.core.utils.ProgressTimer;
@@ -34,7 +30,7 @@ import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphalgo.core.utils.paged.HugeLongArray;
 import org.neo4j.graphalgo.core.write.Exporter;
 import org.neo4j.graphalgo.core.write.Translators;
-import org.neo4j.graphalgo.impl.*;
+import org.neo4j.graphalgo.impl.ForwardBackwardScc;
 import org.neo4j.graphalgo.impl.multistepscc.MultistepSCC;
 import org.neo4j.graphalgo.impl.scc.SCCAlgorithm;
 import org.neo4j.graphalgo.impl.scc.SCCTarjan;
@@ -46,8 +42,6 @@ import org.neo4j.kernel.api.KernelTransaction;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 import org.neo4j.logging.Log;
 import org.neo4j.procedure.*;
-import org.neo4j.values.storable.IntValue;
-import org.neo4j.values.storable.Values;
 
 import java.util.Map;
 import java.util.stream.Stream;
@@ -117,7 +111,7 @@ public class StronglyConnectedComponentsProc {
         loadTimer.stop();
 
         if (graph.nodeCount() == 0) {
-            return Stream.of(builder.build());
+            return Stream.of(SCCResult.EMPTY);
         }
 
         final TerminationFlag terminationFlag = TerminationFlag.wrap(transaction);
@@ -125,38 +119,30 @@ public class StronglyConnectedComponentsProc {
                 .withProgressLogger(ProgressLogger.wrap(log, "SCC(Tarjan)"))
                 .withTerminationFlag(terminationFlag);
 
-        builder.timeEval(() -> {
-            tarjan.compute();
-            builder.withMaxSetSize(tarjan.getMaxSetSize())
-                    .withMinSetSize(tarjan.getMinSetSize())
-                    .withSetCount(tarjan.getConnectedComponents().size());
-        });
+        builder.timeEval(tarjan::compute);
 
+        final int[] connectedComponents = tarjan.getConnectedComponents();
         if (configuration.isWriteFlag()) {
+            builder.withWrite(true);
+            String partitionProperty = configuration.get(CONFIG_WRITE_PROPERTY, CONFIG_CLUSTER);
+            builder.withPartitionProperty(partitionProperty);
+
             builder.timeWrite(() -> {
-                final ObjectArrayList<IntSet> connectedComponents = tarjan.getConnectedComponents();
+                graph.release();
                 tarjan.release();
-                Exporter.of(new DirectIdMapping(connectedComponents.size()), api)
+                Exporter.of(api, graph)
                         .withLog(log)
                         .parallel(Pools.DEFAULT, configuration.getConcurrency(), terminationFlag)
                         .build()
                         .write(
-                                configuration.get(CONFIG_WRITE_PROPERTY, CONFIG_CLUSTER),
-                                propertyId -> (ops, id) -> {
-                                    final int setId = (int) (id);
-                                    IntValue property = Values.intValue(setId + 1);
-                                    for (final IntCursor iCursor : connectedComponents.get(setId)) {
-                                        ops.nodeSetProperty(
-                                                graph.toOriginalNodeId(iCursor.value),
-                                                propertyId,
-                                                property);
-                                    }
-                                }
+                                partitionProperty,
+                                connectedComponents,
+                                Translators.OPTIONAL_INT_ARRAY_TRANSLATOR
                         );
             });
         }
 
-        return Stream.of(builder.build());
+        return Stream.of(builder.build(graph.nodeCount(), l -> (long) connectedComponents[((int) l)]));
     }
 
     // algo.scc.tunedTarjan
@@ -181,7 +167,7 @@ public class StronglyConnectedComponentsProc {
         loadTimer.stop();
 
         if (graph.nodeCount() == 0) {
-            return Stream.of(builder.build());
+            return Stream.of(SCCResult.EMPTY);
         }
 
         final TerminationFlag terminationFlag = TerminationFlag.wrap(transaction);
@@ -191,24 +177,25 @@ public class StronglyConnectedComponentsProc {
 
         builder.timeEval(tarjan::compute);
 
-        builder.withMaxSetSize(tarjan.getMaxSetSize())
-                .withMinSetSize(tarjan.getMinSetSize())
-                .withSetCount(tarjan.getSetCount());
-
         if (configuration.isWriteFlag()) {
+            builder.withWrite(true);
+            String partitionProperty = configuration.get(CONFIG_WRITE_PROPERTY, CONFIG_CLUSTER);
+            builder.withPartitionProperty(partitionProperty);
+
             builder.timeWrite(() -> Exporter
                     .of(api, graph)
                     .withLog(log)
                     .parallel(Pools.DEFAULT, configuration.getConcurrency(), terminationFlag)
                     .build()
                     .write(
-                            configuration.get(CONFIG_WRITE_PROPERTY, CONFIG_CLUSTER),
+                            partitionProperty,
                             tarjan.getConnectedComponents(),
                             Translators.OPTIONAL_INT_ARRAY_TRANSLATOR
                     ));
         }
 
-        return Stream.of(builder.build());
+        final int[] connectedComponents = tarjan.getConnectedComponents();
+        return Stream.of(builder.build(graph.nodeCount(), l -> (long) connectedComponents[((int) l)]));
     }
 
     // algo.scc.tunedTarjan.stream
@@ -261,7 +248,7 @@ public class StronglyConnectedComponentsProc {
         loadTimer.stop();
 
         if (graph.nodeCount() == 0) {
-            return Stream.of(builder.build());
+            return Stream.of(SCCResult.EMPTY);
         }
 
         final AllocationTracker tracker = AllocationTracker.create();
@@ -272,18 +259,24 @@ public class StronglyConnectedComponentsProc {
 
         builder.timeEval(tarjan::compute);
 
-        builder.withSetCount(tarjan.getSetCount())
-                .withMinSetSize(tarjan.getMinSetSize())
-                .withMaxSetSize(tarjan.getMaxSetSize());
-
         if (configuration.isWriteFlag()) {
-            builder.timeWrite(() -> write(configuration,  graph, terminationFlag, tarjan));
+            builder.withWrite(true);
+            String partitionProperty = configuration.get(CONFIG_WRITE_PROPERTY, CONFIG_CLUSTER);
+            builder.withPartitionProperty(partitionProperty);
+
+            builder.timeWrite(() -> write(configuration, graph, terminationFlag, tarjan, partitionProperty));
         }
 
-        return Stream.of(builder.build());
+        if (graph instanceof HugeGraph) {
+            final HugeLongArray connectedComponents = tarjan.getConnectedComponents();
+            return Stream.of(builder.build(graph.nodeCount(), connectedComponents::get));
+        }
+        final int[] connectedComponents = tarjan.getConnectedComponents();
+        tarjan.release();
+        return Stream.of(builder.build(graph.nodeCount(), l -> (long) connectedComponents[((int) l)]));
     }
 
-    private void write(ProcedureConfiguration configuration, Graph graph, TerminationFlag terminationFlag, SCCAlgorithm tarjan) {
+    private void write(ProcedureConfiguration configuration, Graph graph, TerminationFlag terminationFlag, SCCAlgorithm tarjan, String partitionProperty) {
 
         if (graph instanceof HugeGraph) {
             final HugeLongArray connectedComponents = tarjan.getConnectedComponents();
@@ -294,7 +287,7 @@ public class StronglyConnectedComponentsProc {
                     .parallel(Pools.DEFAULT, configuration.getConcurrency(), terminationFlag)
                     .build()
                     .write(
-                            configuration.get(CONFIG_WRITE_PROPERTY, CONFIG_CLUSTER),
+                            partitionProperty,
                             connectedComponents,
                             HugeLongArray.Translator.INSTANCE
                     );
@@ -302,14 +295,12 @@ public class StronglyConnectedComponentsProc {
         }
 
         final int[] connectedComponents = tarjan.getConnectedComponents();
-        graph.release();
-        tarjan.release();
         Exporter.of(api, graph)
                 .withLog(log)
                 .parallel(Pools.DEFAULT, configuration.getConcurrency(), terminationFlag)
                 .build()
                 .write(
-                        configuration.get(CONFIG_WRITE_PROPERTY, CONFIG_CLUSTER),
+                        partitionProperty,
                         connectedComponents,
                         Translators.OPTIONAL_INT_ARRAY_TRANSLATOR
                 );
@@ -372,7 +363,7 @@ public class StronglyConnectedComponentsProc {
 
         if (graph.nodeCount() == 0) {
             graph.release();
-            return Stream.of(builder.build());
+            return Stream.of(SCCResult.EMPTY);
         }
 
         final TerminationFlag terminationFlag = TerminationFlag.wrap(transaction);
@@ -384,27 +375,30 @@ public class StronglyConnectedComponentsProc {
 
         builder.timeEval(multistep::compute);
 
-        builder.withMaxSetSize(multistep.getMaxSetSize())
-                .withMinSetSize(multistep.getMinSetSize())
-                .withSetCount(multistep.getSetCount());
+        final int[] connectedComponents = multistep.getConnectedComponents();
 
         if (configuration.isWriteFlag()) {
-            final int[] connectedComponents = multistep.getConnectedComponents();
             graph.release();
             multistep.release();
-            builder.timeWrite(() -> Exporter
-                    .of(api, graph)
-                    .withLog(log)
-                    .parallel(Pools.DEFAULT, configuration.getConcurrency(), terminationFlag)
-                    .build()
-                    .write(
-                            configuration.get(CONFIG_WRITE_PROPERTY, CONFIG_CLUSTER),
-                            connectedComponents,
-                            Translators.OPTIONAL_INT_ARRAY_TRANSLATOR
-                    ));
+            builder.timeWrite(() -> {
+                builder.withWrite(true);
+                String partitionProperty = configuration.get(CONFIG_WRITE_PROPERTY, CONFIG_CLUSTER);
+                builder.withPartitionProperty(partitionProperty);
+
+                Exporter
+                        .of(api, graph)
+                        .withLog(log)
+                        .parallel(Pools.DEFAULT, configuration.getConcurrency(), terminationFlag)
+                        .build()
+                        .write(
+                                partitionProperty,
+                                connectedComponents,
+                                Translators.OPTIONAL_INT_ARRAY_TRANSLATOR
+                        );
+            });
         }
 
-        return Stream.of(builder.build());
+        return Stream.of(builder.build(graph.nodeCount(), l -> (long) connectedComponents[((int) l)]));
     }
 
     // algo.scc.multistep.stream
@@ -417,23 +411,19 @@ public class StronglyConnectedComponentsProc {
             @Name(value = "config", defaultValue = "{}") Map<String, Object> config) {
 
         ProcedureConfiguration configuration = ProcedureConfiguration.create(config);
-
         Graph graph = new GraphLoader(api, Pools.DEFAULT)
                 .init(log, label, relationship, configuration)
                 .withoutRelationshipWeights()
                 .load(configuration.getGraphImpl());
-
         if (graph.nodeCount() == 0) {
             graph.release();
             return Stream.empty();
         }
-
         final MultistepSCC multistep = new MultistepSCC(graph, org.neo4j.graphalgo.core.utils.Pools.DEFAULT,
                 configuration.getConcurrency(),
                 configuration.getNumber("cutoff", 100_000).intValue())
                 .withProgressLogger(ProgressLogger.wrap(log, "SCC(MultiStep)"))
                 .withTerminationFlag(TerminationFlag.wrap(transaction));
-
         multistep.compute();
         graph.release();
         return multistep.resultStream();
@@ -450,17 +440,14 @@ public class StronglyConnectedComponentsProc {
             @Name(value = "config", defaultValue = "{}") Map<String, Object> config) {
 
         ProcedureConfiguration configuration = ProcedureConfiguration.create(config);
-
         Graph graph = new GraphLoader(api, Pools.DEFAULT)
                 .init(log, label, relationship, configuration)
                 .withoutRelationshipWeights()
                 .load(configuration.getGraphImpl());
-
         if (graph.nodeCount() == 0) {
             graph.release();
             return Stream.empty();
         }
-
         final ForwardBackwardScc algo = new ForwardBackwardScc(graph, Pools.DEFAULT,
                 configuration.getConcurrency())
                 .withProgressLogger(ProgressLogger.wrap(log, "SCC(ForwardBackward)"))

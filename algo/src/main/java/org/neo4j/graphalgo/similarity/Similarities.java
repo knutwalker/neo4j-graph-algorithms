@@ -1,29 +1,40 @@
 /**
  * Copyright (c) 2017 "Neo4j, Inc." <http://neo4j.com>
- * <p>
+ *
  * This file is part of Neo4j Graph Algorithms <http://github.com/neo4j-contrib/neo4j-graph-algorithms>.
- * <p>
+ *
  * Neo4j Graph Algorithms is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * <p>
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * <p>
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 package org.neo4j.graphalgo.similarity;
 
+import com.carrotsearch.hppc.LongDoubleHashMap;
+import com.carrotsearch.hppc.LongDoubleMap;
+import com.carrotsearch.hppc.LongHashSet;
+import com.carrotsearch.hppc.LongSet;
+import org.neo4j.graphalgo.core.ProcedureConfiguration;
+import org.neo4j.graphalgo.core.utils.Intersections;
 import org.neo4j.procedure.Description;
 import org.neo4j.procedure.Name;
+import org.neo4j.procedure.UserAggregationFunction;
 import org.neo4j.procedure.UserFunction;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+
+import static org.neo4j.graphalgo.similarity.SimilarityVectorAggregator.CATEGORY_KEY;
+import static org.neo4j.graphalgo.similarity.SimilarityVectorAggregator.WEIGHT_KEY;
 
 public class Similarities {
 
@@ -49,51 +60,83 @@ public class Similarities {
             throw new RuntimeException("Vectors must be non-empty and of the same size");
         }
 
-        double dotProduct = 0d;
-        double xLength = 0d;
-        double yLength = 0d;
-        for (int i = 0; i < vector1.size(); i++) {
-            double weight1 = vector1.get(i).doubleValue();
-            double weight2 = vector2.get(i).doubleValue();
+        int len = Math.min(vector1.size(), vector2.size());
+        double[] weights1 = new double[len];
+        double[] weights2 = new double[len];
 
-            dotProduct += weight1 * weight2;
-            xLength += weight1 * weight1;
-            yLength += weight2 * weight2;
+        for (int i = 0; i < len; i++) {
+            weights1[i] = vector1.get(i).doubleValue();
+            weights2[i] = vector2.get(i).doubleValue();
         }
 
-        xLength = Math.sqrt(xLength);
-        yLength = Math.sqrt(yLength);
+        return Math.sqrt(Intersections.cosineSquare(weights1, weights2, len));
+    }
 
-        return dotProduct / (xLength * yLength);
+    @UserAggregationFunction("algo.similarity.asVector")
+    @Description("algo.similarity.asVector - builds a vector of maps containing items and weights")
+    public SimilarityVectorAggregator asVector() {
+        return new SimilarityVectorAggregator();
     }
 
     @UserFunction("algo.similarity.pearson")
     @Description("algo.similarity.pearson([vector1], [vector2]) " +
             "given two collection vectors, calculate pearson similarity")
-    public double pearsonSimilarity(@Name("vector1") List<Number> vector1, @Name("vector2") List<Number> vector2) {
-        if (vector1.size() != vector2.size() || vector1.size() == 0) {
-            throw new RuntimeException("Vectors must be non-empty and of the same size");
+    public double pearsonSimilarity(@Name("vector1") Object rawVector1, @Name("vector2") Object rawVector2, @Name(value = "config", defaultValue = "{}") Map<String, Object> config) {
+        ProcedureConfiguration configuration = ProcedureConfiguration.create(config);
+
+        String listType = configuration.get("vectorType", "numbers");
+
+        if (listType.equalsIgnoreCase("maps")) {
+            List<Map<String, Object>> vector1 = (List<Map<String, Object>>) rawVector1;
+            List<Map<String, Object>> vector2 = (List<Map<String, Object>>) rawVector2;
+
+            LongSet ids = new LongHashSet();
+
+            LongDoubleMap v1Mappings = new LongDoubleHashMap();
+            for (Map<String, Object> entry : vector1) {
+                Long id = (Long) entry.get(CATEGORY_KEY);
+                ids.add(id);
+                v1Mappings.put(id, (Double) entry.get(WEIGHT_KEY));
+            }
+
+            LongDoubleMap v2Mappings = new LongDoubleHashMap();
+            for (Map<String, Object> entry : vector2) {
+                Long id = (Long) entry.get(CATEGORY_KEY);
+                ids.add(id);
+                v2Mappings.put(id, (Double) entry.get(WEIGHT_KEY));
+            }
+
+            double[] weights1 = new double[ids.size()];
+            double[] weights2 = new double[ids.size()];
+
+            double skipValue = Double.NaN;
+            int index = 0;
+            for (long id : ids.toArray()) {
+                weights1[index] = v1Mappings.getOrDefault(id, skipValue);
+                weights2[index] = v2Mappings.getOrDefault(id, skipValue);
+                index++;
+            }
+
+            return Intersections.pearsonSkip(weights1, weights2, ids.size(), skipValue);
+        } else {
+            List<Number> vector1 = (List<Number>) rawVector1;
+            List<Number> vector2 = (List<Number>) rawVector2;
+
+            if (vector1.size() != vector2.size() || vector1.size() == 0) {
+                throw new RuntimeException("Vectors must be non-empty and of the same size");
+            }
+
+            int len = vector1.size();
+            double[] weights1 = new double[len];
+            double[] weights2 = new double[len];
+
+            for (int i = 0; i < len; i++) {
+                weights1[i] = vector1.get(i).doubleValue();
+                weights2[i] = vector2.get(i).doubleValue();
+            }
+            return Intersections.pearson(weights1, weights2, len);
         }
 
-        double vector1Mean = vector1.stream().mapToDouble(Number::doubleValue).average().orElse(1);
-        double vector2Mean = vector2.stream().mapToDouble(Number::doubleValue).average().orElse(1);
-
-        double dotProductMinusMean = 0d;
-        double xLength = 0d;
-        double yLength = 0d;
-        for (int i = 0; i < vector1.size(); i++) {
-            double weight1 = vector1.get(i).doubleValue();
-            double weight2 = vector2.get(i).doubleValue();
-
-            double vector1Delta = weight1 - vector1Mean;
-            double vector2Delta = weight2 - vector2Mean;
-
-            dotProductMinusMean += (vector1Delta * vector2Delta);
-            xLength += vector1Delta * vector1Delta;
-            yLength += vector2Delta * vector2Delta;
-        }
-
-        return dotProductMinusMean / (Math.sqrt(xLength * yLength));
     }
 
     @UserFunction("algo.similarity.euclideanDistance")
@@ -104,15 +147,16 @@ public class Similarities {
             throw new RuntimeException("Vectors must be non-empty and of the same size");
         }
 
-        double distance = 0.0;
-        for (int i = 0; i < vector1.size(); i++) {
-            double sqOfDiff = vector1.get(i).doubleValue() - vector2.get(i).doubleValue();
-            sqOfDiff *= sqOfDiff;
-            distance += sqOfDiff;
-        }
-        distance = Math.sqrt(distance);
+        int len = Math.min(vector1.size(), vector2.size());
+        double[] weights1 = new double[len];
+        double[] weights2 = new double[len];
 
-        return distance;
+        for (int i = 0; i < len; i++) {
+            weights1[i] = vector1.get(i).doubleValue();
+            weights2[i] = vector2.get(i).doubleValue();
+        }
+
+        return Math.sqrt(Intersections.sumSquareDelta(weights1, weights2, len));
     }
 
     @UserFunction("algo.similarity.euclidean")
@@ -135,4 +179,5 @@ public class Similarities {
         long denominator = Math.min(vector1.size(), vector2.size());
         return denominator == 0 ? 0 : (double) intersection / denominator;
     }
+
 }

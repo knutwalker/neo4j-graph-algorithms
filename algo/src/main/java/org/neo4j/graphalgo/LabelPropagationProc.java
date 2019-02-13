@@ -105,15 +105,16 @@ public final class LabelPropagationProc {
 
         if(graph.nodeCount() == 0) {
             graph.release();
-            return Stream.of(stats.build());
+            return Stream.of(LabelPropagationStats.EMPTY);
         }
 
-        int[] labels = compute(direction, iterations, batchSize, concurrency, graph, stats);
+        final int[] labels = compute(direction, iterations, batchSize, concurrency, graph, stats);
         if (configuration.isWriteFlag(DEFAULT_WRITE) && partitionProperty != null) {
+            stats.withWrite(true);
             write(concurrency, partitionProperty, graph, labels, stats);
         }
 
-        return Stream.of(stats.build());
+        return Stream.of(stats.build(graph.nodeCount(), l -> (long) labels[(int) l]));
     }
 
     @Procedure(value = "algo.labelPropagation.stream")
@@ -205,7 +206,6 @@ public final class LabelPropagationProc {
 
             stats.iterations(labelPropagation.ranIterations());
             stats.didConverge(labelPropagation.didConverge());
-            stats.nodes(result.length);
 
             labelPropagation.release();
             graph.release();
@@ -219,7 +219,6 @@ public final class LabelPropagationProc {
             HeavyGraph graph,
             int[] labels,
             LabelPropagationStats.Builder stats) {
-        stats.write(true);
         try (ProgressTimer timer = stats.timeWrite()) {
             Exporter.of(dbAPI, graph)
                     .withLog(log)

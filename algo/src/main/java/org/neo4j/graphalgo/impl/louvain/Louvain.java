@@ -1,18 +1,18 @@
 /**
  * Copyright (c) 2017 "Neo4j, Inc." <http://neo4j.com>
- * <p>
+ *
  * This file is part of Neo4j Graph Algorithms <http://github.com/neo4j-contrib/neo4j-graph-algorithms>.
- * <p>
+ *
  * Neo4j Graph Algorithms is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * <p>
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * <p>
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
@@ -23,6 +23,7 @@ import com.carrotsearch.hppc.IntObjectScatterMap;
 import com.carrotsearch.hppc.IntScatterSet;
 import com.carrotsearch.hppc.LongDoubleScatterMap;
 import org.neo4j.graphalgo.api.Graph;
+import org.neo4j.graphalgo.api.WeightMapping;
 import org.neo4j.graphalgo.core.utils.ProgressLogger;
 import org.neo4j.graphalgo.core.utils.RawValues;
 import org.neo4j.graphalgo.core.utils.TerminationFlag;
@@ -31,6 +32,7 @@ import org.neo4j.graphalgo.impl.Algorithm;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.IntStream;
@@ -58,10 +60,11 @@ public class Louvain extends Algorithm<Louvain> {
     private ProgressLogger progressLogger;
     private TerminationFlag terminationFlag;
     private int[] communities;
+    private double[] modularities;
     private int[][] dendrogram;
     private double[] nodeWeights;
     private Graph root;
-    private int communityCount = 0;
+    private int communityCount;
 
     public Louvain(Graph graph,
                    ExecutorService pool,
@@ -84,9 +87,10 @@ public class Louvain extends Algorithm<Louvain> {
         Graph graph = this.root;
         // result arrays
         dendrogram = new int[maxLevel][];
+        modularities = new double[maxLevel];
         int nodeCount = rootNodeCount;
         for (level = 0; level < maxLevel; level++) {
-            // start modularity opzimization
+            // start modularity optimization
             final ModularityOptimization modularityOptimization =
                     new ModularityOptimization(graph,
                             nodeId -> nodeWeights[nodeId],
@@ -98,7 +102,7 @@ public class Louvain extends Algorithm<Louvain> {
                             .compute(maxIterations);
             // rebuild graph based on the community structure
             final int[] communityIds = modularityOptimization.getCommunityIds();
-            communityCount = ModularityOptimization.normalize(communityIds);
+            communityCount = LouvainUtils.normalize(communityIds);
             // release the old algo instance
             modularityOptimization.release();
             progressLogger.log(
@@ -110,6 +114,55 @@ public class Louvain extends Algorithm<Louvain> {
             }
             nodeCount = communityCount;
             dendrogram[level] = rebuildCommunityStructure(communityIds);
+            modularities[level] = modularityOptimization.getModularity();
+            graph = rebuildGraph(graph, communityIds, communityCount);
+        }
+        dendrogram = Arrays.copyOf(dendrogram, level);
+        return this;
+    }
+
+    public Louvain compute(WeightMapping communityMap, int maxLevel, int maxIterations) {
+        BitSet comCount = new BitSet();
+        Arrays.setAll(communities, i -> {
+            final int t = (int) communityMap.get(i, -1.0);
+            final int c = t == -1 ? i : t;
+            comCount.set(c);
+            return c;
+        });
+        // temporary graph
+        int nodeCount = comCount.cardinality();
+        LouvainUtils.normalize(communities);
+        Graph graph = rebuildGraph(this.root, communities, nodeCount);
+        // result arrays
+        dendrogram = new int[maxLevel][];
+        modularities = new double[maxLevel];
+
+        for (level = 0; level < maxLevel && terminationFlag.running(); level++) {
+            // start modularity optimization
+            final ModularityOptimization modularityOptimization =
+                    new ModularityOptimization(graph,
+                            nodeId -> nodeWeights[nodeId],
+                            pool,
+                            concurrency,
+                            tracker)
+                            .withProgressLogger(progressLogger)
+                            .withTerminationFlag(terminationFlag)
+                            .compute(maxIterations);
+            // rebuild graph based on the community structure
+            final int[] communityIds = modularityOptimization.getCommunityIds();
+            communityCount = LouvainUtils.normalize(communityIds);
+            // release the old algo instance
+            modularityOptimization.release();
+            progressLogger.log(
+                    "level: " + (level + 1) +
+                            " communities: " + communityCount +
+                            " q: " + modularityOptimization.getModularity());
+            if (communityCount >= nodeCount) {
+                break;
+            }
+            nodeCount = communityCount;
+            dendrogram[level] = rebuildCommunityStructure(communityIds);
+            modularities[level] = modularityOptimization.getModularity();
             graph = rebuildGraph(graph, communityIds, communityCount);
         }
         dendrogram = Arrays.copyOf(dendrogram, level);
@@ -134,20 +187,20 @@ public class Louvain extends Algorithm<Louvain> {
         // for each node in the current graph
         for (int i = 0; i < nodeCount; i++) {
             // map node nodeId to community nodeId
-            final int source = communityIds[i];
+            final int sourceCommunity = communityIds[i];
             // get transitions from current node
             graph.forEachOutgoing(i, (s, t, r) -> {
                 // mapping
-                final int target = communityIds[t];
+                final int targetCommunity = communityIds[t];
                 final double value = graph.weightOf(s, t);
-                if (source == target) {
-                    nodeWeights[source] += value;
+                if (sourceCommunity == targetCommunity) {
+                    nodeWeights[sourceCommunity] += value;
                 }
                 // add IN and OUT relation
-                computeIfAbsent(relationships, target).add(source);
-                computeIfAbsent(relationships, source).add(target);
-                relationshipWeights.addTo(RawValues.combineIntInt(source, target), value / 2); // TODO validate
-                relationshipWeights.addTo(RawValues.combineIntInt(target, source), value / 2);
+                putIfAbsent(relationships, targetCommunity).add(sourceCommunity);
+                putIfAbsent(relationships, sourceCommunity).add(targetCommunity);
+                relationshipWeights.addTo(RawValues.combineIntInt(sourceCommunity, targetCommunity), value / 2); // TODO validate
+                relationshipWeights.addTo(RawValues.combineIntInt(targetCommunity, sourceCommunity), value / 2);
                 return true;
             });
         }
@@ -158,6 +211,7 @@ public class Louvain extends Algorithm<Louvain> {
 
     private int[] rebuildCommunityStructure(int[] communityIds) {
         // rebuild community array
+        assert rootNodeCount == communities.length;
         final int[] ints = new int[rootNodeCount];
         Arrays.setAll(ints, i -> communityIds[communities[i]]);
         communities = ints;
@@ -179,6 +233,14 @@ public class Louvain extends Algorithm<Louvain> {
 
     public int[][] getDendrogram() {
         return dendrogram;
+    }
+
+    public double[] getModularities() {
+        return Arrays.copyOfRange(modularities, 0, level);
+    }
+
+    public double getFinalModularity() {
+        return modularities[level-1];
     }
 
     /**
@@ -248,12 +310,12 @@ public class Louvain extends Algorithm<Louvain> {
         return this;
     }
 
-    private static IntScatterSet computeIfAbsent(IntObjectMap<IntScatterSet> relationships, int n) {
-        final IntScatterSet intCursors = relationships.get(n);
+    private static IntScatterSet putIfAbsent(IntObjectMap<IntScatterSet> relationships, int community) {
+        final IntScatterSet intCursors = relationships.get(community);
         if (null == intCursors) {
-            final IntScatterSet newList = new IntScatterSet();
-            relationships.put(n, newList);
-            return newList;
+            final IntScatterSet newSet = new IntScatterSet();
+            relationships.put(community, newSet);
+            return newSet;
         }
         return intCursors;
     }

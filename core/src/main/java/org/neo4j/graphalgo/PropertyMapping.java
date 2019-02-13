@@ -19,19 +19,20 @@
 package org.neo4j.graphalgo;
 
 public class PropertyMapping {
-    public final String type;
+
+    // property name in the result map Graph.nodeProperties( <propertyName> )
+    public final String propertyName;
+    // property name in the graph (a:Node {<propertyKey>:xyz})
     public final String propertyKey;
     public final double defaultValue;
 
-    public PropertyMapping(String type, String propertyKey, double defaultValue) {
-        this.type = type;
-        this.propertyKey = propertyKey;
+    public PropertyMapping(String propertyName, String propertyKeyInGraph, double defaultValue) {
+        this.propertyName = propertyName;
+        this.propertyKey = propertyKeyInGraph;
         this.defaultValue = defaultValue;
     }
 
-    public static PropertyMapping of(String type, String propertyKey, double defaultValue) {
-        return new PropertyMapping(type, propertyKey, defaultValue);
+    public static PropertyMapping of(String propertyName, String propertyKeyInGraph, double defaultValue) {
+        return new PropertyMapping(propertyName, propertyKeyInGraph, defaultValue);
     }
-
-
 }

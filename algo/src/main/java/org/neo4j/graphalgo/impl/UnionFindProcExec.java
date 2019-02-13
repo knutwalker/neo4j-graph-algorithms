@@ -18,6 +18,8 @@
  */
 package org.neo4j.graphalgo.impl;
 
+import com.carrotsearch.hppc.LongLongMap;
+import org.HdrHistogram.Histogram;
 import org.neo4j.graphalgo.api.Graph;
 import org.neo4j.graphalgo.core.GraphLoader;
 import org.neo4j.graphalgo.core.ProcedureConfiguration;
@@ -29,7 +31,7 @@ import org.neo4j.graphalgo.core.utils.dss.DisjointSetStruct;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphalgo.core.utils.paged.PagedDisjointSetStruct;
 import org.neo4j.graphalgo.core.write.Exporter;
-import org.neo4j.graphalgo.results.UnionFindResult;
+import org.neo4j.graphalgo.results.AbstractCommunityResultBuilder;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.kernel.api.KernelTransaction;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
@@ -50,7 +52,7 @@ public final class UnionFindProcExec implements BiConsumer<String, Algorithm<?>>
     private final GraphDatabaseAPI api;
     private final Log log;
     private final KernelTransaction transaction;
-    private final UnionFindAlgo sequential;
+    private final  UnionFindAlgo sequential;
     private final UnionFindAlgo parallel;
 
     public static Stream<UnionFindResult> run(
@@ -64,7 +66,8 @@ public final class UnionFindProcExec implements BiConsumer<String, Algorithm<?>>
                 .overrideRelationshipTypeOrQuery(relationship);
 
         AllocationTracker tracker = AllocationTracker.create();
-        UnionFindResult.Builder builder = UnionFindResult.builder();
+
+        final Builder builder = new Builder();
 
         UnionFindProcExec uf = unionFind.get();
 
@@ -72,13 +75,10 @@ public final class UnionFindProcExec implements BiConsumer<String, Algorithm<?>>
 
         if (graph.nodeCount() == 0) {
             graph.release();
-            return Stream.of(builder
-                    .withNodeCount(graph.nodeCount())
-                    .withSetCount(0)
-                    .build());
+            return Stream.of(UnionFindResult.EMPTY);
         }
 
-        DSSResult dssResult = uf.evaluate(
+        final DSSResult dssResult = uf.evaluate(
                 builder::timeEval,
                 graph,
                 configuration,
@@ -86,13 +86,115 @@ public final class UnionFindProcExec implements BiConsumer<String, Algorithm<?>>
         graph.release();
 
         if (configuration.isWriteFlag()) {
-            uf.write(builder::timeWrite, graph, dssResult, configuration);
+            String writeProperty = configuration.get(CONFIG_CLUSTER_PROPERTY, DEFAULT_CLUSTER_PROPERTY);
+            builder.withWrite(true);
+            builder.withPartitionProperty(writeProperty);
+
+            uf.write(builder::timeWrite, graph, dssResult, configuration, writeProperty);
         }
 
-        return Stream.of(builder
-                .withNodeCount(graph.nodeCount())
-                .withSetCount(dssResult.getSetCount())
-                .build());
+        if (dssResult.isHuge) {
+            return Stream.of(builder.build(graph.nodeCount(), dssResult.hugeStruct::find));
+        } else {
+            return Stream.of(builder.build(graph.nodeCount(), l -> (long) dssResult.struct.find((int) l)));
+        }
+    }
+
+    public static class UnionFindResult {
+
+        public static final UnionFindProcExec.UnionFindResult EMPTY = new UnionFindProcExec.UnionFindResult(
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                -1,
+                false, null);
+
+        public final long loadMillis;
+        public final long computeMillis;
+        public final long writeMillis;
+        public final long postProcessingMillis;
+        public final long nodes;
+        public final long communityCount;
+        public final long setCount;
+        public final long p1;
+        public final long p5;
+        public final long p10;
+        public final long p25;
+        public final long p50;
+        public final long p75;
+        public final long p90;
+        public final long p95;
+        public final long p99;
+        public final long p100;
+        public final boolean write;
+        public final String partitionProperty;
+
+
+        public UnionFindResult(long loadMillis, long computeMillis, long postProcessingMillis, long writeMillis, long nodes, long communityCount, long p100, long p99, long p95, long p90, long p75, long p50, long p25, long p10, long p5, long p1, boolean write, String partitionProperty) {
+            this.loadMillis = loadMillis;
+            this.computeMillis = computeMillis;
+            this.writeMillis = writeMillis;
+            this.postProcessingMillis = postProcessingMillis;
+            this.nodes = nodes;
+            this.communityCount = this.setCount = communityCount;
+            this.p100 = p100;
+            this.p99 = p99;
+            this.p95 = p95;
+            this.p90 = p90;
+            this.p75 = p75;
+            this.p50 = p50;
+            this.p25 = p25;
+            this.p10 = p10;
+            this.p5 = p5;
+            this.p1 = p1;
+            this.write = write;
+            this.partitionProperty = partitionProperty;
+        }
+    }
+
+    public static class Builder extends AbstractCommunityResultBuilder<UnionFindResult> {
+        private String partitionProperty;
+
+        @Override
+        protected UnionFindResult build(long loadMillis, long computeMillis, long writeMillis, long postProcessingMillis, long nodeCount, long communityCount, LongLongMap communitySizeMap, Histogram communityHistogram, boolean write) {
+            return new UnionFindResult(
+                    loadMillis,
+                    computeMillis,
+                    postProcessingMillis,
+                    writeMillis,
+                    nodeCount,
+                    communityCount,
+                    communityHistogram.getValueAtPercentile(100),
+                    communityHistogram.getValueAtPercentile(99),
+                    communityHistogram.getValueAtPercentile(95),
+                    communityHistogram.getValueAtPercentile(90),
+                    communityHistogram.getValueAtPercentile(75),
+                    communityHistogram.getValueAtPercentile(50),
+                    communityHistogram.getValueAtPercentile(25),
+                    communityHistogram.getValueAtPercentile(10),
+                    communityHistogram.getValueAtPercentile(5),
+                    communityHistogram.getValueAtPercentile(1),
+                    write,
+                    partitionProperty
+            );
+        }
+
+        public Builder withPartitionProperty(String partitionProperty) {
+            this.partitionProperty = partitionProperty;
+            return null;
+        }
     }
 
     public static Stream<DisjointSetStruct.Result> stream(
@@ -187,16 +289,16 @@ public final class UnionFindProcExec implements BiConsumer<String, Algorithm<?>>
             Supplier<ProgressTimer> timer,
             Graph graph,
             DSSResult struct,
-            ProcedureConfiguration configuration) {
+            ProcedureConfiguration configuration, String writeProperty) {
         try (ProgressTimer ignored = timer.get()) {
-            write(graph, struct, configuration);
+            write(graph, struct, configuration, writeProperty);
         }
     }
 
     private void write(
             Graph graph,
             DSSResult struct,
-            ProcedureConfiguration configuration) {
+            ProcedureConfiguration configuration, String writeProperty) {
         log.debug("Writing results");
         Exporter exporter = Exporter.of(api, graph)
                 .withLog(log)
@@ -206,9 +308,9 @@ public final class UnionFindProcExec implements BiConsumer<String, Algorithm<?>>
                         TerminationFlag.wrap(transaction))
                 .build();
         if (struct.hugeStruct != null) {
-            write(exporter, struct.hugeStruct, configuration);
+            write(exporter, struct.hugeStruct, writeProperty);
         } else {
-            write(exporter, struct.struct, configuration);
+            write(exporter, struct.struct, writeProperty);
         }
     }
 
@@ -220,26 +322,22 @@ public final class UnionFindProcExec implements BiConsumer<String, Algorithm<?>>
 
     private void write(
             Exporter exporter,
-            DisjointSetStruct struct,
-            ProcedureConfiguration configuration) {
+            DisjointSetStruct struct, String writeProperty) {
         exporter.write(
-                configuration.get(
-                        CONFIG_CLUSTER_PROPERTY,
-                        DEFAULT_CLUSTER_PROPERTY),
+                writeProperty,
                 struct,
                 DisjointSetStruct.Translator.INSTANCE);
     }
 
     private void write(
             Exporter exporter,
-            PagedDisjointSetStruct struct,
-            ProcedureConfiguration configuration) {
+            PagedDisjointSetStruct struct, String writeProperty) {
         exporter.write(
-                configuration.get(
-                        CONFIG_CLUSTER_PROPERTY,
-                        DEFAULT_CLUSTER_PROPERTY),
+                writeProperty,
                 struct,
                 PagedDisjointSetStruct.Translator.INSTANCE);
     }
+
+
 
 }

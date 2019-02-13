@@ -97,7 +97,7 @@ public final class GraphDimensions extends StatementFunction<GraphDimensions> {
         PropertyMapping[] mappings = setup.nodePropertyMappings;
 
         for (int i = 0; i < mappings.length; i++) {
-            if (mappings[i].type.equals(type)) {
+            if (mappings[i].propertyName.equals(type)) {
                 return nodePropIds[i];
             }
         }
@@ -108,7 +108,7 @@ public final class GraphDimensions extends StatementFunction<GraphDimensions> {
         PropertyMapping[] mappings = setup.nodePropertyMappings;
 
         for (PropertyMapping mapping : mappings) {
-            if (mapping.type.equals(type)) {
+            if (mapping.propertyName.equals(type)) {
                 return mapping.defaultValue;
             }
         }
