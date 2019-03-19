@@ -24,6 +24,7 @@ import org.junit.Test;
 import org.neo4j.graphalgo.PropertyMapping;
 import org.neo4j.graphalgo.api.HugeGraph;
 import org.neo4j.graphalgo.core.GraphLoader;
+import org.neo4j.graphalgo.core.huge.loader.HugeGraphFactory;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.test.rule.ImpermanentDatabaseRule;
 
@@ -139,6 +140,23 @@ public class HugeGraphFactoryTest {
         assertEquals(1.0, graph.nodeProperties("prop1").get(graph.toMappedNodeId(0L)), 0.01);
         assertEquals(2.0, graph.nodeProperties("prop2").get(graph.toMappedNodeId(1L)), 0.01);
         assertEquals(3.0, graph.nodeProperties("prop3").get(graph.toMappedNodeId(2L)), 0.01);
+    }
+
+    @Test
+    public void testWithHugeNodeProperties() {
+        final HugeGraph graph = (HugeGraph) new GraphLoader(DB)
+                .withoutRelationshipWeights()
+                .withAnyRelationshipType()
+                .withOptionalNodeProperties(
+                        PropertyMapping.of("prop1", "prop1", 0D),
+                        PropertyMapping.of("prop2", "prop2", 0D),
+                        PropertyMapping.of("prop3", "prop3", 0D)
+                )
+                .load(HugeGraphFactory.class);
+
+        assertEquals(1.0, graph.hugeNodeProperties("prop1").nodeWeight(graph.toHugeMappedNodeId(0L)), 0.01);
+        assertEquals(2.0, graph.hugeNodeProperties("prop2").nodeWeight(graph.toHugeMappedNodeId(1L)), 0.01);
+        assertEquals(3.0, graph.hugeNodeProperties("prop3").nodeWeight(graph.toHugeMappedNodeId(2L)), 0.01);
     }
 
     private long[] collectTargetIds(final HugeGraph graph, long sourceId) {
