@@ -213,24 +213,6 @@ public class LabelPropagationProcIntegrationTest {
     }
 
     @Test
-    public void shouldNotAllowLightOrHugeOrKernelGraph() throws Throwable {
-        String query = "CALL algo.labelPropagation(null, null, null, {graph:$graph})";
-        Map<String, Object> params = parParams();
-
-        exceptions.expect(IllegalArgumentException.class);
-        exceptions.expectMessage("The graph algorithm only supports these graph types; [heavy, cypher]");
-
-        for (final String graph : Arrays.asList("light", "huge", "kernel")) {
-            params.put("graph", graph);
-            try {
-                runQuery(query, params);
-            } catch (QueryExecutionException qee) {
-                throw Exceptions.rootCause(qee);
-            }
-        }
-    }
-
-    @Test
     public void shouldStreamResults() {
         // this one deliberately tests the streaming and non streaming versions against each other to check we get the same results
         // we intentionally start with no labels defined for any nodes (hence partitionProperty = {lpa, lpa2})
