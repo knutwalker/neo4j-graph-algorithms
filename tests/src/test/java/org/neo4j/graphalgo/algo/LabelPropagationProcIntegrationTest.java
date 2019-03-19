@@ -235,6 +235,6 @@ public class LabelPropagationProcIntegrationTest {
     }
 
     private Map<String, Object> parParams() {
-        return MapUtil.map("batchSize", parallel ? 1 : 100, "concurrency", parallel ? 1 : 8, "graph", graphImpl);
+        return MapUtil.map("batchSize", parallel ? 1 : 100, "concurrency", parallel ? 8: 1, "graph", graphImpl);
     }
 }
