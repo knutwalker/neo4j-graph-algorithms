@@ -21,6 +21,7 @@ package org.neo4j.graphalgo;
 import org.neo4j.graphalgo.api.Graph;
 import org.neo4j.graphalgo.api.GraphFactory;
 import org.neo4j.graphalgo.api.HugeGraph;
+import org.neo4j.graphalgo.api.HugeNodeProperties;
 import org.neo4j.graphalgo.api.NodeProperties;
 import org.neo4j.graphalgo.api.WeightMapping;
 import org.neo4j.graphalgo.core.GraphLoader;
@@ -32,6 +33,7 @@ import org.neo4j.graphalgo.core.utils.ProgressTimer;
 import org.neo4j.graphalgo.core.utils.TerminationFlag;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphalgo.core.write.Exporter;
+import org.neo4j.graphalgo.impl.HugeLabelPropagation;
 import org.neo4j.graphalgo.impl.LabelPropagation;
 import org.neo4j.graphalgo.impl.LabelPropagationAlgorithm;
 import org.neo4j.graphalgo.impl.LabelPropagationAlgorithm.Labels;
@@ -177,6 +179,13 @@ public final class LabelPropagationProc {
         }
 
         Labels result = compute(configuration, direction, iterations, batchSize, concurrency, graph, tracker, stats);
+
+        if (graph instanceof HugeGraph) {
+            HugeGraph hugeGraph = (HugeGraph) graph;
+            return LongStream.range(0L, result.size())
+                    .mapToObj(i -> new LabelPropagation.StreamResult(hugeGraph.toOriginalNodeId(i), result.labelFor(i)));
+        }
+
         return IntStream.range(0, (int) result.size())
                 .mapToObj(i -> new LabelPropagation.StreamResult(graph.toOriginalNodeId(i), result.labelFor(i)));
 
@@ -254,7 +263,13 @@ public final class LabelPropagationProc {
         ExecutorService pool = batchSize > 0 ? Pools.DEFAULT : null;
         batchSize = Math.max(1, batchSize);
         final LabelPropagationAlgorithm<?> labelPropagation;
-        labelPropagation = new LabelPropagation(graph, nodeProperties, batchSize, concurrency, pool);
+        if (graph instanceof HugeGraph && nodeProperties instanceof HugeNodeProperties) {
+            HugeGraph hugeGraph = (HugeGraph) graph;
+            HugeNodeProperties properties = (HugeNodeProperties) nodeProperties;
+            labelPropagation = new HugeLabelPropagation(hugeGraph, properties, batchSize, concurrency, pool, tracker);
+        } else {
+            labelPropagation = new LabelPropagation(graph, nodeProperties, batchSize, concurrency, pool);
+        }
         try (ProgressTimer ignored = stats.timeEval()) {
             labelPropagation
                     .withProgressLogger(ProgressLogger.wrap(log, "LabelPropagation"))

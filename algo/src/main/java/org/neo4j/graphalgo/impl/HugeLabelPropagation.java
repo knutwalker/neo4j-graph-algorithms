@@ -18,98 +18,100 @@
  */
 package org.neo4j.graphalgo.impl;
 
-import com.carrotsearch.hppc.IntDoubleHashMap;
-import com.carrotsearch.hppc.IntDoubleScatterMap;
-import com.carrotsearch.hppc.cursors.IntDoubleCursor;
-import org.neo4j.collection.primitive.PrimitiveIntIterable;
-import org.neo4j.collection.primitive.PrimitiveIntIterator;
-import org.neo4j.graphalgo.api.Graph;
-import org.neo4j.graphalgo.api.NodeProperties;
-import org.neo4j.graphalgo.api.RelationshipConsumer;
-import org.neo4j.graphalgo.api.WeightMapping;
+import com.carrotsearch.hppc.LongDoubleHashMap;
+import com.carrotsearch.hppc.LongDoubleScatterMap;
+import com.carrotsearch.hppc.cursors.LongDoubleCursor;
+import org.neo4j.collection.primitive.PrimitiveLongIterable;
+import org.neo4j.collection.primitive.PrimitiveLongIterator;
+import org.neo4j.graphalgo.api.HugeGraph;
+import org.neo4j.graphalgo.api.HugeNodeProperties;
+import org.neo4j.graphalgo.api.HugeRelationshipConsumer;
+import org.neo4j.graphalgo.api.HugeWeightMapping;
 import org.neo4j.graphalgo.core.utils.ParallelUtil;
 import org.neo4j.graphalgo.core.utils.ProgressLogger;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
+import org.neo4j.graphalgo.core.utils.paged.HugeLongArray;
+import org.neo4j.graphalgo.impl.LabelPropagationAlgorithm.HugeLabelArray;
 import org.neo4j.graphdb.Direction;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 
-public final class LabelPropagation extends BaseLabelPropagation<
-        Graph,
-        WeightMapping,
-        LabelPropagationAlgorithm.LabelArray,
-        LabelPropagation> {
+public final class HugeLabelPropagation extends BaseLabelPropagation<
+        HugeGraph,
+        HugeWeightMapping,
+        HugeLabelArray,
+        HugeLabelPropagation> {
 
-    public LabelPropagation(
-            Graph graph,
-            NodeProperties nodeProperties,
+    public HugeLabelPropagation(
+            HugeGraph graph,
+            HugeNodeProperties nodeProperties,
             int batchSize,
             int concurrency,
-            ExecutorService executor) {
+            ExecutorService executor,
+            AllocationTracker tracker) {
         super(graph,
-                nodeProperties.nodeProperties(PARTITION_TYPE),
-                nodeProperties.nodeProperties(WEIGHT_TYPE),
+                nodeProperties.hugeNodeProperties(PARTITION_TYPE),
+                nodeProperties.hugeNodeProperties(WEIGHT_TYPE),
                 batchSize,
                 concurrency,
                 executor,
-                AllocationTracker.EMPTY);
+                tracker);
     }
 
     @Override
-    LabelArray initialLabels(final long nodeCount, final AllocationTracker tracker) {
-        return new LabelArray(new int[Math.toIntExact(nodeCount)]);
+    HugeLabelArray initialLabels(final long nodeCount, final AllocationTracker tracker) {
+        return new HugeLabelArray(HugeLongArray.newArray(nodeCount, tracker));
     }
 
     @Override
     List<BaseStep> baseSteps(
-            final Graph graph,
-            final LabelArray labels,
-            final WeightMapping nodeProperties,
-            final WeightMapping nodeWeights,
+            final HugeGraph graph,
+            final HugeLabelArray labels,
+            final HugeWeightMapping nodeProperties,
+            final HugeWeightMapping nodeWeights,
             final Direction direction,
             final boolean randomizeOrder) {
         return ParallelUtil.readParallel(
                 concurrency,
                 batchSize,
                 graph,
-                (offset, nodes) -> {
-                    InitStep initStep = new InitStep(
+                executor,
+                (nodeOffset, nodeIds) -> {
+                    InitStep initStep2 = new InitStep(
                             graph,
                             labels.labels,
                             direction,
                             randomizeOrder,
                             getProgressLogger(),
-                            nodes,
+                            nodeIds,
                             nodeProperties,
                             nodeWeights
                     );
-                    return asStep(initStep);
-                },
-                executor);
-
+                    return asStep(initStep2);
+                });
     }
 
     private static final class InitStep extends Initialization {
 
-        private final Graph graph;
-        private final int[] existingLabels;
+        private final HugeGraph graph;
+        private final HugeLongArray existingLabels;
         private final Direction direction;
         private final boolean randomizeOrder;
         private final ProgressLogger progressLogger;
-        private final PrimitiveIntIterable nodes;
-        private final WeightMapping nodeProperties;
-        private final WeightMapping nodeWeights;
+        private final PrimitiveLongIterable nodes;
+        private final HugeWeightMapping nodeProperties;
+        private final HugeWeightMapping nodeWeights;
 
         private InitStep(
-                Graph graph,
-                int[] existingLabels,
+                HugeGraph graph,
+                HugeLongArray existingLabels,
                 Direction direction,
                 boolean randomizeOrder,
                 ProgressLogger progressLogger,
-                PrimitiveIntIterable nodes,
-                WeightMapping nodeProperties,
-                WeightMapping nodeWeights) {
+                PrimitiveLongIterable nodes,
+                HugeWeightMapping nodeProperties,
+                HugeWeightMapping nodeWeights) {
             this.graph = graph;
             this.existingLabels = existingLabels;
             this.direction = direction;
@@ -122,11 +124,11 @@ public final class LabelPropagation extends BaseLabelPropagation<
 
         @Override
         void setExistingLabels() {
-            PrimitiveIntIterator iterator = nodes.iterator();
+            PrimitiveLongIterator iterator = nodes.iterator();
             while (iterator.hasNext()) {
-                int nodeId = iterator.next();
-                int existingLabel = (int) this.nodeProperties.get(nodeId, (double) nodeId);
-                existingLabels[nodeId] = existingLabel;
+                long nodeId = iterator.next();
+                long existingLabel = (long) nodeProperties.nodeWeight(nodeId, (double) nodeId);
+                existingLabels.set(nodeId, existingLabel);
             }
         }
 
@@ -139,42 +141,43 @@ public final class LabelPropagation extends BaseLabelPropagation<
                     randomizeOrder,
                     progressLogger,
                     nodes,
-                    nodeWeights);
+                    nodeWeights
+            );
         }
     }
 
-    private static final class ComputeStep extends Computation implements RelationshipConsumer {
+    private static final class ComputeStep extends Computation implements HugeRelationshipConsumer {
 
-        private final Graph graph;
-        private final int[] existingLabels;
+        private final HugeGraph graph;
+        private final HugeLongArray existingLabels;
         private final Direction direction;
         private final ProgressLogger progressLogger;
-        private final PrimitiveIntIterable nodes;
-        private final int maxNode;
-        private final IntDoubleHashMap votes;
-        private final WeightMapping nodeWeights;
+        private final PrimitiveLongIterable nodes;
+        private final long maxNode;
+        private final LongDoubleHashMap votes;
+        private final HugeWeightMapping nodeWeights;
 
         private ComputeStep(
-                Graph graph,
-                int[] existingLabels,
+                HugeGraph graph,
+                HugeLongArray existingLabels,
                 Direction direction,
                 boolean randomizeOrder,
                 ProgressLogger progressLogger,
-                PrimitiveIntIterable nodes,
-                WeightMapping nodeWeights) {
+                PrimitiveLongIterable nodes,
+                HugeWeightMapping nodeWeights) {
             this.graph = graph;
             this.existingLabels = existingLabels;
             this.direction = direction;
             this.progressLogger = progressLogger;
-            this.nodes = RandomlySwitchingIntIterable.of(randomizeOrder, nodes);
-            this.maxNode = (int) (graph.nodeCount() - 1L);
-            this.votes = new IntDoubleScatterMap();
+            this.nodes = RandomlySwitchingLongIterable.of(randomizeOrder, nodes);
+            this.maxNode = graph.nodeCount() - 1L;
+            this.votes = new LongDoubleScatterMap();
             this.nodeWeights = nodeWeights;
         }
 
         @Override
         boolean computeAll() {
-            PrimitiveIntIterator iterator = nodes.iterator();
+            PrimitiveLongIterator iterator = nodes.iterator();
             boolean didChange = false;
             while (iterator.hasNext()) {
                 didChange = compute(iterator.next(), didChange);
@@ -182,13 +185,13 @@ public final class LabelPropagation extends BaseLabelPropagation<
             return didChange;
         }
 
-        private boolean compute(int nodeId, boolean didChange) {
+        private boolean compute(long nodeId, boolean didChange) {
             votes.clear();
-            int partition = existingLabels[nodeId];
-            int previous = partition;
+            long partition = existingLabels.get(nodeId);
+            long previous = partition;
             graph.forEachRelationship(nodeId, direction, this);
             double weight = Double.NEGATIVE_INFINITY;
-            for (IntDoubleCursor vote : votes) {
+            for (LongDoubleCursor vote : votes) {
                 if (weight < vote.value) {
                     weight = vote.value;
                     partition = vote.key;
@@ -196,19 +199,16 @@ public final class LabelPropagation extends BaseLabelPropagation<
             }
             progressLogger.logProgress(nodeId, maxNode);
             if (partition != previous) {
-                existingLabels[nodeId] = partition;
+                existingLabels.set(nodeId, partition);
                 return true;
             }
             return didChange;
         }
 
         @Override
-        public boolean accept(
-                final int sourceNodeId,
-                final int targetNodeId,
-                final long relationId) {
-            int partition = existingLabels[targetNodeId];
-            double weight = graph.weightOf(sourceNodeId, targetNodeId) * nodeWeights.get(targetNodeId);
+        public boolean accept(final long sourceNodeId, final long targetNodeId) {
+            long partition = existingLabels.get(targetNodeId);
+            double weight = graph.weightOf(sourceNodeId, targetNodeId) * nodeWeights.nodeWeight(targetNodeId);
             votes.addTo(partition, weight);
             return true;
         }
@@ -220,7 +220,7 @@ public final class LabelPropagation extends BaseLabelPropagation<
             // we want to throw away all data to allow for GC collection instead.
 
             if (votes.keys != null) {
-                votes.keys = EMPTY_INTS;
+                votes.keys = EMPTY_LONGS;
                 votes.clear();
                 votes.keys = null;
                 votes.values = null;
