@@ -32,6 +32,7 @@ import org.neo4j.graphalgo.core.GraphLoader;
 import org.neo4j.graphalgo.core.heavyweight.HeavyGraph;
 import org.neo4j.graphalgo.core.heavyweight.HeavyGraphFactory;
 import org.neo4j.graphalgo.core.utils.Pools;
+import org.neo4j.graphalgo.impl.LabelPropagationAlgorithm.Labels;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.internal.kernel.api.exceptions.KernelException;
 import org.neo4j.test.rule.ImpermanentDatabaseRule;
@@ -42,6 +43,8 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.neo4j.graphalgo.impl.LabelPropagationAlgorithm.PARTITION_TYPE;
+import static org.neo4j.graphalgo.impl.LabelPropagationAlgorithm.WEIGHT_TYPE;
 
 //@formatter:off
 /**
@@ -122,8 +125,8 @@ public final class LabelPropagation420Test {
                 .withNodeWeightsFromProperty("weight", 1.0)
                 .withNodeProperty("partition", 0.0)
                 .withOptionalNodeProperties(
-                        PropertyMapping.of(LabelPropagation.PARTITION_TYPE, "partition", 0.0),
-                        PropertyMapping.of(LabelPropagation.WEIGHT_TYPE, "weight", 1.0)
+                        PropertyMapping.of(WEIGHT_TYPE, WEIGHT_TYPE, 1.0),
+                        PropertyMapping.of(PARTITION_TYPE, PARTITION_TYPE, 0.0)
                 )
                 .withDirection(Direction.BOTH)
                 .withConcurrency(Pools.DEFAULT_CONCURRENCY)
@@ -151,9 +154,9 @@ public final class LabelPropagation420Test {
 
         lp.compute(Direction.OUTGOING, 10);
 
-        int[] labels = lp.labels();
+        Labels labels = lp.labels();
         assertNotNull(labels);
-        IntObjectMap<IntArrayList> cluster = lp.groupByPartition();
+        IntObjectMap<IntArrayList> cluster = LabelPropagationTests.groupByPartitionInt(labels);
         assertNotNull(cluster);
 
         // It could happen that the labels for Charles, Doug, and Mark oscillate,

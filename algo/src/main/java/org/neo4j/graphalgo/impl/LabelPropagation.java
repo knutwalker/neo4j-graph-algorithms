@@ -18,11 +18,8 @@
  */
 package org.neo4j.graphalgo.impl;
 
-import com.carrotsearch.hppc.IntArrayList;
 import com.carrotsearch.hppc.IntDoubleHashMap;
 import com.carrotsearch.hppc.IntDoubleScatterMap;
-import com.carrotsearch.hppc.IntObjectHashMap;
-import com.carrotsearch.hppc.IntObjectMap;
 import com.carrotsearch.hppc.cursors.IntDoubleCursor;
 import org.neo4j.collection.primitive.PrimitiveIntIterable;
 import org.neo4j.collection.primitive.PrimitiveIntIterator;
@@ -35,14 +32,9 @@ import org.neo4j.graphalgo.core.utils.ProgressLogger;
 import org.neo4j.graphdb.Direction;
 
 import java.util.List;
-import java.util.Random;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadLocalRandom;
 
-public final class LabelPropagation extends Algorithm<LabelPropagation> {
-
-    public static final String PARTITION_TYPE = "property";
-    public static final String WEIGHT_TYPE = "weight";
+public final class LabelPropagation extends LabelPropagationAlgorithm<LabelPropagation> {
 
     private static final int[] EMPTY_INTS = new int[0];
 
@@ -58,16 +50,6 @@ public final class LabelPropagation extends Algorithm<LabelPropagation> {
     private int[] labels;
     private long ranIterations;
     private boolean didConverge;
-
-    public static class StreamResult {
-        public final long nodeId;
-        public final long label;
-
-        public StreamResult(long nodeId, long label) {
-            this.nodeId = nodeId;
-            this.label = label;
-        }
-    }
 
     public LabelPropagation(
             Graph graph,
@@ -85,13 +67,8 @@ public final class LabelPropagation extends Algorithm<LabelPropagation> {
         this.nodeWeights = nodeProperties.nodeProperties(WEIGHT_TYPE);
     }
 
-    public LabelPropagation compute(
-        Direction direction,
-        long maxIterations) {
-        return compute(direction, maxIterations, true);
-    }
-
-    public LabelPropagation compute(
+    @Override
+    LabelPropagation compute(
             Direction direction,
             long maxIterations,
             boolean randomizeOrder) {
@@ -145,40 +122,19 @@ public final class LabelPropagation extends Algorithm<LabelPropagation> {
         return this;
     }
 
+    @Override
     public long ranIterations() {
         return ranIterations;
     }
 
+    @Override
     public boolean didConverge() {
         return didConverge;
     }
 
-    public int[] labels() {
-        return labels;
-    }
-
-    public IntObjectMap<IntArrayList> groupByPartition() {
-        if (labels == null) {
-            return null;
-        }
-        IntObjectMap<IntArrayList> cluster = new IntObjectHashMap<>();
-
-        for (int node = 0, l = labels.length; node < l; node++) {
-            int key = labels[node];
-            IntArrayList ids = cluster.get(key);
-            if (ids == null) {
-                ids = new IntArrayList();
-                cluster.put(key, ids);
-            }
-            ids.add(node);
-        }
-
-        return cluster;
-    }
-
     @Override
-    public LabelPropagation me() {
-        return this;
+    public Labels labels() {
+        return new LabelArray(labels);
     }
 
     @Override
@@ -265,7 +221,7 @@ public final class LabelPropagation extends Algorithm<LabelPropagation> {
             this.existingLabels = existingLabels;
             this.direction = direction;
             this.progressLogger = progressLogger;
-            this.nodes = RandomlySwitchingIterable.of(randomizeOrder, nodes);
+            this.nodes = RandomlySwitchingIntIterable.of(randomizeOrder, nodes);
             this.maxNode = (int) (graph.nodeCount() - 1L);
             this.votes = new IntDoubleScatterMap();
             this.nodeWeights = nodeWeights;
@@ -329,62 +285,6 @@ public final class LabelPropagation extends Algorithm<LabelPropagation> {
                 votes.keys = null;
                 votes.values = null;
             }
-        }
-    }
-
-    private static final class RandomlySwitchingIterable implements PrimitiveIntIterable {
-        private final PrimitiveIntIterable delegate;
-        private final Random random;
-
-        static PrimitiveIntIterable of(
-                boolean randomize,
-                PrimitiveIntIterable delegate) {
-            return randomize
-                    ? new RandomlySwitchingIterable(delegate, ThreadLocalRandom.current())
-                    : delegate;
-        }
-
-        private RandomlySwitchingIterable(PrimitiveIntIterable delegate, Random random) {
-            this.delegate = delegate;
-            this.random = random;
-        }
-
-        @Override
-        public PrimitiveIntIterator iterator() {
-            return new RandomlySwitchingIterator(delegate.iterator(), random);
-        }
-    }
-
-    private static final class RandomlySwitchingIterator implements PrimitiveIntIterator {
-        private final PrimitiveIntIterator delegate;
-        private final Random random;
-        private boolean hasSkipped;
-        private int skipped;
-
-        private RandomlySwitchingIterator(PrimitiveIntIterator delegate, Random random) {
-            this.delegate = delegate;
-            this.random = random;
-        }
-
-        @Override
-        public boolean hasNext() {
-            return hasSkipped || delegate.hasNext();
-        }
-
-        @Override
-        public int next() {
-            if (hasSkipped) {
-                int elem = skipped;
-                hasSkipped = false;
-                return elem;
-            }
-            int next = delegate.next();
-            if (delegate.hasNext() && random.nextBoolean()) {
-                skipped = next;
-                hasSkipped = true;
-                return delegate.next();
-            }
-            return next;
         }
     }
 }

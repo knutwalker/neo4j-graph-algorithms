@@ -35,6 +35,7 @@ import org.neo4j.graphalgo.core.GraphLoader;
 import org.neo4j.graphalgo.core.heavyweight.HeavyCypherGraphFactory;
 import org.neo4j.graphalgo.core.heavyweight.HeavyGraph;
 import org.neo4j.graphalgo.core.utils.Pools;
+import org.neo4j.graphalgo.impl.LabelPropagationAlgorithm.Labels;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.internal.kernel.api.exceptions.KernelException;
 import org.neo4j.test.Property;
@@ -154,9 +155,9 @@ public final class LabelPropagation420CypherLoadingTest
 
         lp.compute(Direction.OUTGOING, 10);
 
-        int[] labels = lp.labels();
+        Labels labels = lp.labels();
         assertNotNull(labels);
-        IntObjectMap<IntArrayList> cluster = lp.groupByPartition();
+        IntObjectMap<IntArrayList> cluster = LabelPropagationTests.groupByPartitionInt(labels);
         assertNotNull(cluster);
 
         // It could happen that the labels for Charles, Doug, and Mark oscillate,
