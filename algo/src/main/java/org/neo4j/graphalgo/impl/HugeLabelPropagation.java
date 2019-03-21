@@ -26,6 +26,8 @@ import org.neo4j.collection.primitive.PrimitiveLongIterator;
 import org.neo4j.graphalgo.api.HugeGraph;
 import org.neo4j.graphalgo.api.HugeNodeProperties;
 import org.neo4j.graphalgo.api.HugeRelationshipConsumer;
+import org.neo4j.graphalgo.api.HugeRelationshipIterator;
+import org.neo4j.graphalgo.api.HugeRelationshipWeights;
 import org.neo4j.graphalgo.api.HugeWeightMapping;
 import org.neo4j.graphalgo.core.utils.ParallelUtil;
 import org.neo4j.graphalgo.core.utils.ProgressLogger;
@@ -79,14 +81,14 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<
                 executor,
                 (nodeOffset, nodeIds) -> {
                     InitStep initStep2 = new InitStep(
-                            graph,
-                            labels.labels,
-                            direction,
-                            randomizeOrder,
-                            getProgressLogger(),
-                            nodeIds,
                             nodeProperties,
-                            nodeWeights
+                            labels.labels,
+                            nodeIds,
+                            graph,
+                            nodeWeights,
+                            getProgressLogger(),
+                            direction,
+                            randomizeOrder
                     );
                     return asStep(initStep2);
                 });
@@ -94,32 +96,32 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<
 
     private static final class InitStep extends Initialization {
 
-        private final HugeGraph graph;
+        private final HugeWeightMapping nodeProperties;
         private final HugeLongArray existingLabels;
+        private final PrimitiveLongIterable nodes;
+        private final HugeGraph graph;
+        private final HugeWeightMapping nodeWeights;
+        private final ProgressLogger progressLogger;
         private final Direction direction;
         private final boolean randomizeOrder;
-        private final ProgressLogger progressLogger;
-        private final PrimitiveLongIterable nodes;
-        private final HugeWeightMapping nodeProperties;
-        private final HugeWeightMapping nodeWeights;
 
         private InitStep(
-                HugeGraph graph,
-                HugeLongArray existingLabels,
-                Direction direction,
-                boolean randomizeOrder,
-                ProgressLogger progressLogger,
-                PrimitiveLongIterable nodes,
                 HugeWeightMapping nodeProperties,
-                HugeWeightMapping nodeWeights) {
-            this.graph = graph;
+                HugeLongArray existingLabels,
+                PrimitiveLongIterable nodes,
+                HugeGraph graph,
+                HugeWeightMapping nodeWeights,
+                ProgressLogger progressLogger,
+                Direction direction,
+                boolean randomizeOrder) {
+            this.nodeProperties = nodeProperties;
             this.existingLabels = existingLabels;
+            this.nodes = nodes;
+            this.graph = graph;
+            this.nodeWeights = nodeWeights;
+            this.progressLogger = progressLogger;
             this.direction = direction;
             this.randomizeOrder = randomizeOrder;
-            this.progressLogger = progressLogger;
-            this.nodes = nodes;
-            this.nodeProperties = nodeProperties;
-            this.nodeWeights = nodeWeights;
         }
 
         @Override
@@ -135,44 +137,50 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<
         @Override
         Computation computeStep() {
             return new ComputeStep(
+                    graph.concurrentCopy(),
                     graph,
-                    existingLabels,
-                    direction,
-                    randomizeOrder,
+                    nodeWeights,
                     progressLogger,
+                    direction,
+                    graph.nodeCount() - 1L,
+                    existingLabels,
                     nodes,
-                    nodeWeights
+                    randomizeOrder
             );
         }
     }
 
     private static final class ComputeStep extends Computation implements HugeRelationshipConsumer {
 
-        private final HugeGraph graph;
-        private final HugeLongArray existingLabels;
-        private final Direction direction;
-        private final ProgressLogger progressLogger;
-        private final PrimitiveLongIterable nodes;
-        private final long maxNode;
-        private final LongDoubleHashMap votes;
+        private final HugeRelationshipIterator graph;
+        private final HugeRelationshipWeights relationshipWeights;
         private final HugeWeightMapping nodeWeights;
+        private final ProgressLogger progressLogger;
+        private final Direction direction;
+        private final long maxNode;
+        private final HugeLongArray existingLabels;
+        private final PrimitiveLongIterable nodes;
+        private final LongDoubleHashMap votes;
 
         private ComputeStep(
-                HugeGraph graph,
-                HugeLongArray existingLabels,
-                Direction direction,
-                boolean randomizeOrder,
+                HugeRelationshipIterator graph,
+                HugeRelationshipWeights relationshipWeights,
+                HugeWeightMapping nodeWeights,
                 ProgressLogger progressLogger,
+                Direction direction,
+                final long maxNode,
+                HugeLongArray existingLabels,
                 PrimitiveLongIterable nodes,
-                HugeWeightMapping nodeWeights) {
+                boolean randomizeOrder) {
             this.graph = graph;
-            this.existingLabels = existingLabels;
-            this.direction = direction;
-            this.progressLogger = progressLogger;
-            this.nodes = RandomlySwitchingLongIterable.of(randomizeOrder, nodes);
-            this.maxNode = graph.nodeCount() - 1L;
-            this.votes = new LongDoubleScatterMap();
+            this.relationshipWeights = relationshipWeights;
             this.nodeWeights = nodeWeights;
+            this.progressLogger = progressLogger;
+            this.direction = direction;
+            this.maxNode = maxNode;
+            this.existingLabels = existingLabels;
+            this.nodes = RandomlySwitchingLongIterable.of(randomizeOrder, nodes);
+            this.votes = new LongDoubleScatterMap();
         }
 
         @Override
@@ -208,7 +216,9 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<
         @Override
         public boolean accept(final long sourceNodeId, final long targetNodeId) {
             long partition = existingLabels.get(targetNodeId);
-            double weight = graph.weightOf(sourceNodeId, targetNodeId) * nodeWeights.nodeWeight(targetNodeId);
+            double relationshipWeight = relationshipWeights.weightOf(sourceNodeId, targetNodeId);
+            double nodeWeight = nodeWeights.nodeWeight(targetNodeId);
+            double weight = relationshipWeight * nodeWeight;
             votes.addTo(partition, weight);
             return true;
         }

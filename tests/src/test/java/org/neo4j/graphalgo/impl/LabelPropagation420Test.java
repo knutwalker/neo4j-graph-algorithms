@@ -27,17 +27,26 @@ import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ErrorCollector;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.neo4j.graphalgo.PropertyMapping;
+import org.neo4j.graphalgo.api.Graph;
+import org.neo4j.graphalgo.api.GraphFactory;
+import org.neo4j.graphalgo.api.HugeGraph;
+import org.neo4j.graphalgo.api.HugeNodeProperties;
+import org.neo4j.graphalgo.api.NodeProperties;
 import org.neo4j.graphalgo.core.GraphLoader;
-import org.neo4j.graphalgo.core.heavyweight.HeavyGraph;
+import org.neo4j.graphalgo.core.heavyweight.HeavyCypherGraphFactory;
 import org.neo4j.graphalgo.core.heavyweight.HeavyGraphFactory;
+import org.neo4j.graphalgo.core.huge.loader.HugeGraphFactory;
 import org.neo4j.graphalgo.core.utils.Pools;
+import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphalgo.impl.LabelPropagationAlgorithm.Labels;
 import org.neo4j.graphdb.Direction;
-import org.neo4j.internal.kernel.api.exceptions.KernelException;
 import org.neo4j.test.rule.ImpermanentDatabaseRule;
 
 import java.util.Arrays;
+import java.util.Collection;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -83,6 +92,7 @@ import static org.neo4j.graphalgo.impl.LabelPropagationAlgorithm.WEIGHT_TYPE;
  *  nothing to do, finished
  */
 //@formatter:on
+@RunWith(Parameterized.class)
 public final class LabelPropagation420Test {
 
     private static final String GRAPH =
@@ -103,57 +113,102 @@ public final class LabelPropagation420Test {
                     ",(nMichael)-[:FOLLOW]->(nBridget)\n" +
                     ",(nCharles)-[:FOLLOW]->(nDoug)";
 
+    @Parameterized.Parameters(name = "graph={0}")
+    public static Collection<Object[]> data() {
+        return Arrays.asList(
+                new Object[]{HeavyGraphFactory.class},
+                new Object[]{HeavyCypherGraphFactory.class},
+                new Object[]{HugeGraphFactory.class}
+        );
+    }
+
     @ClassRule
     public static final ImpermanentDatabaseRule DB = new ImpermanentDatabaseRule();
 
     @BeforeClass
-    public static void setupGraph() throws KernelException {
+    public static void setupGraph() {
         DB.execute(GRAPH).close();
     }
 
     @Rule
     public ErrorCollector collector = new ErrorCollector();
 
-    private HeavyGraph graph;
+    private final Class<? extends GraphFactory> graphImpl;
+    private Graph graph;
+
+    public LabelPropagation420Test(Class<? extends GraphFactory> graphImpl) {
+        this.graphImpl = graphImpl;
+    }
 
     @Before
     public void setup() {
-        graph = (HeavyGraph) new GraphLoader(DB, Pools.DEFAULT)
-                .withLabel("User")
-                .withRelationshipType("FOLLOW")
+        GraphLoader graphLoader = new GraphLoader(DB, Pools.DEFAULT)
                 .withRelationshipWeightsFromProperty("weight", 1.0)
-                .withNodeWeightsFromProperty("weight", 1.0)
-                .withNodeProperty("partition", 0.0)
                 .withOptionalNodeProperties(
                         PropertyMapping.of(WEIGHT_TYPE, WEIGHT_TYPE, 1.0),
                         PropertyMapping.of(PARTITION_TYPE, PARTITION_TYPE, 0.0)
                 )
                 .withDirection(Direction.BOTH)
-                .withConcurrency(Pools.DEFAULT_CONCURRENCY)
-                .load(HeavyGraphFactory.class);
+                .withConcurrency(Pools.DEFAULT_CONCURRENCY);
+
+        if (graphImpl == HeavyCypherGraphFactory.class) {
+            graphLoader
+                    .withLabel("MATCH (u:User) RETURN id(u) as id")
+                    .withRelationshipType("MATCH (u1:User)-[rel:FOLLOW]->(u2:User) \n" +
+                            "RETURN id(u1) as source,id(u2) as target")
+                    .withName("cypher");
+        } else {
+            graphLoader
+                    .withLabel("User")
+                    .withRelationshipType("FOLLOW")
+                    .withName(graphImpl.getSimpleName());
+        }
+        graph = graphLoader.load(graphImpl);
     }
 
     @Test
-    public void testSingleThreadClustering() throws Exception {
+    public void testSingleThreadClustering() {
         testClustering(100);
     }
 
     @Test
-    public void testMultiThreadClustering() throws Exception {
+    public void testMultiThreadClustering() {
         testClustering(2);
     }
 
+    @Test
+    public void testHugeSingleThreadClustering() {
+        testHugeClustering(100);
+    }
 
-    private void testClustering(int batchSize) throws Exception {
-        final LabelPropagation lp = new LabelPropagation(
+    @Test
+    public void testHugeMultiThreadClustering() {
+        testHugeClustering(2);
+    }
+
+    private void testClustering(int batchSize) {
+        testClustering(new LabelPropagation(
                 graph,
-                graph,
+                (NodeProperties) graph,
                 batchSize,
                 Pools.DEFAULT_CONCURRENCY,
-                Pools.DEFAULT);
+                Pools.DEFAULT));
+    }
 
-        lp.compute(Direction.OUTGOING, 10);
+    private void testHugeClustering(int batchSize) {
+        if (graph instanceof HugeGraph) {
+            testClustering(new HugeLabelPropagation(
+                    (HugeGraph) graph,
+                    (HugeNodeProperties) graph,
+                    batchSize,
+                    Pools.DEFAULT_CONCURRENCY,
+                    Pools.DEFAULT,
+                    AllocationTracker.EMPTY));
+        }
+    }
 
+    private void testClustering(LabelPropagationAlgorithm<?> lp) {
+        lp.compute(Direction.OUTGOING, 10L);
         Labels labels = lp.labels();
         assertNotNull(labels);
         IntObjectMap<IntArrayList> cluster = LabelPropagationTests.groupByPartitionInt(labels);
@@ -165,8 +220,8 @@ public final class LabelPropagation420Test {
         // to minimize the oscillations, but it cannot be guaranteed that
         // it will never happen. It's RNG after all: http://dilbert.com/strip/2001-10-25
         if (lp.didConverge()) {
-            assertTrue("expected at least 2 iterations, got " + lp.ranIterations(), 2 <= lp.ranIterations());
-            assertEquals(2, cluster.size());
+            assertTrue("expected at least 2 iterations, got " + lp.ranIterations(), 2L <= lp.ranIterations());
+            assertEquals(2L, (long) cluster.size());
             for (IntObjectCursor<IntArrayList> cursor : cluster) {
                 int[] ids = cursor.value.toArray();
                 Arrays.sort(ids);
