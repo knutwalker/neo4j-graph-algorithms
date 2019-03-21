@@ -18,9 +18,6 @@
  */
 package org.neo4j.graphalgo.impl;
 
-import com.carrotsearch.hppc.IntDoubleHashMap;
-import com.carrotsearch.hppc.IntDoubleScatterMap;
-import com.carrotsearch.hppc.cursors.IntDoubleCursor;
 import org.neo4j.collection.primitive.PrimitiveIntIterable;
 import org.neo4j.collection.primitive.PrimitiveIntIterator;
 import org.neo4j.graphalgo.api.Graph;
@@ -35,11 +32,7 @@ import org.neo4j.graphdb.Direction;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 
-public final class LabelPropagation extends BaseLabelPropagation<
-        Graph,
-        WeightMapping,
-        LabelPropagationAlgorithm.LabelArray,
-        LabelPropagation> {
+public final class LabelPropagation extends BaseLabelPropagation<Graph, WeightMapping, LabelPropagation> {
 
     public LabelPropagation(
             Graph graph,
@@ -47,7 +40,8 @@ public final class LabelPropagation extends BaseLabelPropagation<
             int batchSize,
             int concurrency,
             ExecutorService executor) {
-        super(graph,
+        super(
+                graph,
                 nodeProperties.nodeProperties(PARTITION_TYPE),
                 nodeProperties.nodeProperties(WEIGHT_TYPE),
                 batchSize,
@@ -58,17 +52,17 @@ public final class LabelPropagation extends BaseLabelPropagation<
 
     @Override
     LabelArray initialLabels(final long nodeCount, final AllocationTracker tracker) {
-        return new LabelArray(new int[Math.toIntExact(nodeCount)]);
+        return new LabelArray(new long[Math.toIntExact(nodeCount)]);
     }
 
     @Override
     List<BaseStep> baseSteps(
             final Graph graph,
-            final LabelArray labels,
+            final Labels labels,
             final WeightMapping nodeProperties,
             final WeightMapping nodeWeights,
             final Direction direction,
-            final boolean randomizeOrder) {
+            final RandomProvider random) {
         return ParallelUtil.readParallel(
                 concurrency,
                 batchSize,
@@ -76,9 +70,9 @@ public final class LabelPropagation extends BaseLabelPropagation<
                 (offset, nodes) -> {
                     InitStep initStep = new InitStep(
                             graph,
-                            labels.labels,
+                            labels,
                             direction,
-                            randomizeOrder,
+                            random,
                             getProgressLogger(),
                             nodes,
                             nodeProperties,
@@ -93,9 +87,9 @@ public final class LabelPropagation extends BaseLabelPropagation<
     private static final class InitStep extends Initialization {
 
         private final Graph graph;
-        private final int[] existingLabels;
+        private final Labels existingLabels;
         private final Direction direction;
-        private final boolean randomizeOrder;
+        private final RandomProvider random;
         private final ProgressLogger progressLogger;
         private final PrimitiveIntIterable nodes;
         private final WeightMapping nodeProperties;
@@ -103,9 +97,9 @@ public final class LabelPropagation extends BaseLabelPropagation<
 
         private InitStep(
                 Graph graph,
-                int[] existingLabels,
+                Labels existingLabels,
                 Direction direction,
-                boolean randomizeOrder,
+                RandomProvider random,
                 ProgressLogger progressLogger,
                 PrimitiveIntIterable nodes,
                 WeightMapping nodeProperties,
@@ -113,7 +107,7 @@ public final class LabelPropagation extends BaseLabelPropagation<
             this.graph = graph;
             this.existingLabels = existingLabels;
             this.direction = direction;
-            this.randomizeOrder = randomizeOrder;
+            this.random = random;
             this.progressLogger = progressLogger;
             this.nodes = nodes;
             this.nodeProperties = nodeProperties;
@@ -125,8 +119,8 @@ public final class LabelPropagation extends BaseLabelPropagation<
             PrimitiveIntIterator iterator = nodes.iterator();
             while (iterator.hasNext()) {
                 int nodeId = iterator.next();
-                int existingLabel = (int) this.nodeProperties.get(nodeId, (double) nodeId);
-                existingLabels[nodeId] = existingLabel;
+                long existingLabel = (long) this.nodeProperties.get(nodeId, (double) nodeId);
+                existingLabels.setLabelFor(nodeId, existingLabel);
             }
         }
 
@@ -136,7 +130,7 @@ public final class LabelPropagation extends BaseLabelPropagation<
                     graph,
                     existingLabels,
                     direction,
-                    randomizeOrder,
+                    random,
                     progressLogger,
                     nodes,
                     nodeWeights);
@@ -146,60 +140,40 @@ public final class LabelPropagation extends BaseLabelPropagation<
     private static final class ComputeStep extends Computation implements RelationshipConsumer {
 
         private final Graph graph;
-        private final int[] existingLabels;
         private final Direction direction;
-        private final ProgressLogger progressLogger;
         private final PrimitiveIntIterable nodes;
-        private final int maxNode;
-        private final IntDoubleHashMap votes;
         private final WeightMapping nodeWeights;
 
         private ComputeStep(
                 Graph graph,
-                int[] existingLabels,
+                Labels existingLabels,
                 Direction direction,
-                boolean randomizeOrder,
+                RandomProvider random,
                 ProgressLogger progressLogger,
                 PrimitiveIntIterable nodes,
                 WeightMapping nodeWeights) {
+            super(existingLabels, progressLogger, graph.nodeCount() - 1L, random);
             this.graph = graph;
-            this.existingLabels = existingLabels;
             this.direction = direction;
-            this.progressLogger = progressLogger;
-            this.nodes = RandomlySwitchingIntIterable.of(randomizeOrder, nodes);
-            this.maxNode = (int) (graph.nodeCount() - 1L);
-            this.votes = new IntDoubleScatterMap();
+            this.nodes = RandomlySwitchingIntIterable.of(random, nodes);
             this.nodeWeights = nodeWeights;
         }
 
         @Override
         boolean computeAll() {
-            PrimitiveIntIterator iterator = nodes.iterator();
-            boolean didChange = false;
-            while (iterator.hasNext()) {
-                didChange = compute(iterator.next(), didChange);
-            }
-            return didChange;
+            return iterateAll(nodes.iterator());
         }
 
-        private boolean compute(int nodeId, boolean didChange) {
-            votes.clear();
-            int partition = existingLabels[nodeId];
-            int previous = partition;
-            graph.forEachRelationship(nodeId, direction, this);
-            double weight = Double.NEGATIVE_INFINITY;
-            for (IntDoubleCursor vote : votes) {
-                if (weight < vote.value) {
-                    weight = vote.value;
-                    partition = vote.key;
-                }
-            }
-            progressLogger.logProgress(nodeId, maxNode);
-            if (partition != previous) {
-                existingLabels[nodeId] = partition;
-                return true;
-            }
-            return didChange;
+        @Override
+        void forEach(final long nodeId) {
+            graph.forEachRelationship((int) nodeId, direction, this);
+        }
+
+        @Override
+        double weightOf(final long nodeId, final long candidate) {
+            double relationshipWeight = graph.weightOf((int) nodeId, (int) candidate);
+            double nodeWeight = nodeWeights.get((int) candidate);
+            return relationshipWeight * nodeWeight;
         }
 
         @Override
@@ -207,24 +181,8 @@ public final class LabelPropagation extends BaseLabelPropagation<
                 final int sourceNodeId,
                 final int targetNodeId,
                 final long relationId) {
-            int partition = existingLabels[targetNodeId];
-            double weight = graph.weightOf(sourceNodeId, targetNodeId) * nodeWeights.get(targetNodeId);
-            votes.addTo(partition, weight);
+            castVote((long) sourceNodeId, (long) targetNodeId);
             return true;
-        }
-
-        @Override
-        void release() {
-            // the HPPC release() method allocates new arrays
-            // the clear() method overwrite the existing keys with the default value
-            // we want to throw away all data to allow for GC collection instead.
-
-            if (votes.keys != null) {
-                votes.keys = EMPTY_INTS;
-                votes.clear();
-                votes.keys = null;
-                votes.values = null;
-            }
         }
     }
 }

@@ -47,6 +47,7 @@ import org.neo4j.test.rule.ImpermanentDatabaseRule;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Random;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -58,17 +59,20 @@ import static org.neo4j.graphalgo.impl.LabelPropagationAlgorithm.WEIGHT_TYPE;
 //@formatter:off
 /**
  *
- *                                       +-----+
- *                                 +---->+  B  |
- *                                 |     +-+---+
- *                                 v       | ^
- *  +----+    +---+    +---+     +-+-+     | |
- *  | Ma +<-->+ D |<---+ C |<----+ A |     | |
- *  +----+    +---+    +---+     +-+-+     | |
- *                                 ^       v |
- *                                 |     +---+-+
- *                                 +---->| Mic |
- *                                       +-----+
+ *                                         +-----+
+ *                                   +---->+  B  |
+ *                                   |     |  1  |
+ *                                   |     +-+---+
+ *                                   v       | ^
+ *  +-----+     +---+    +---+     +-+-+     | |
+ *  |  Ma +<--->+ D |<---+ C |<----+ A |     | |
+ *  |  4  |     | 3 |    | 2 |     | 0 |     | |
+ *  +-----+     +---+    +---+     +-+-+     | |
+ *                                   ^       v |
+ *                                   |     +---+-+
+ *                                   +---->| Mic |
+ *                                         |  5  |
+ *                                         +-----+
  *
  * Ideally, the iterations would go like this.
  *
@@ -208,7 +212,8 @@ public final class LabelPropagation420Test {
     }
 
     private void testClustering(LabelPropagationAlgorithm<?> lp) {
-        lp.compute(Direction.OUTGOING, 10L);
+        Random random = new Random(42L);
+        lp.compute(Direction.OUTGOING, 10L, random);
         Labels labels = lp.labels();
         assertNotNull(labels);
         IntObjectMap<IntArrayList> cluster = LabelPropagationTests.groupByPartitionInt(labels);
@@ -225,7 +230,7 @@ public final class LabelPropagation420Test {
             for (IntObjectCursor<IntArrayList> cursor : cluster) {
                 int[] ids = cursor.value.toArray();
                 Arrays.sort(ids);
-                if (cursor.key == 5) {
+                if (cursor.key == 0 || cursor.key == 1 || cursor.key == 5) {
                     assertArrayEquals(new int[]{0, 1, 5}, ids);
                 } else {
                     assertArrayEquals(new int[]{2, 3, 4}, ids);

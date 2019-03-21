@@ -18,9 +18,6 @@
  */
 package org.neo4j.graphalgo.impl;
 
-import com.carrotsearch.hppc.LongDoubleHashMap;
-import com.carrotsearch.hppc.LongDoubleScatterMap;
-import com.carrotsearch.hppc.cursors.LongDoubleCursor;
 import org.neo4j.collection.primitive.PrimitiveLongIterable;
 import org.neo4j.collection.primitive.PrimitiveLongIterator;
 import org.neo4j.graphalgo.api.HugeGraph;
@@ -33,17 +30,12 @@ import org.neo4j.graphalgo.core.utils.ParallelUtil;
 import org.neo4j.graphalgo.core.utils.ProgressLogger;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphalgo.core.utils.paged.HugeLongArray;
-import org.neo4j.graphalgo.impl.LabelPropagationAlgorithm.HugeLabelArray;
 import org.neo4j.graphdb.Direction;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 
-public final class HugeLabelPropagation extends BaseLabelPropagation<
-        HugeGraph,
-        HugeWeightMapping,
-        HugeLabelArray,
-        HugeLabelPropagation> {
+public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, HugeWeightMapping, HugeLabelPropagation> {
 
     public HugeLabelPropagation(
             HugeGraph graph,
@@ -52,7 +44,8 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<
             int concurrency,
             ExecutorService executor,
             AllocationTracker tracker) {
-        super(graph,
+        super(
+                graph,
                 nodeProperties.hugeNodeProperties(PARTITION_TYPE),
                 nodeProperties.hugeNodeProperties(WEIGHT_TYPE),
                 batchSize,
@@ -69,11 +62,12 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<
     @Override
     List<BaseStep> baseSteps(
             final HugeGraph graph,
-            final HugeLabelArray labels,
+            final Labels labels,
             final HugeWeightMapping nodeProperties,
             final HugeWeightMapping nodeWeights,
             final Direction direction,
-            final boolean randomizeOrder) {
+            final RandomProvider random) {
+        ThreadLocal<HugeRelationshipIterator> localGraphs = ThreadLocal.withInitial(graph::concurrentCopy);
         return ParallelUtil.readParallel(
                 concurrency,
                 batchSize,
@@ -82,13 +76,15 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<
                 (nodeOffset, nodeIds) -> {
                     InitStep initStep2 = new InitStep(
                             nodeProperties,
-                            labels.labels,
+                            labels,
                             nodeIds,
+                            localGraphs,
                             graph,
                             nodeWeights,
                             getProgressLogger(),
                             direction,
-                            randomizeOrder
+                            graph.nodeCount() - 1L,
+                            random
                     );
                     return asStep(initStep2);
                 });
@@ -97,31 +93,37 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<
     private static final class InitStep extends Initialization {
 
         private final HugeWeightMapping nodeProperties;
-        private final HugeLongArray existingLabels;
+        private final Labels existingLabels;
         private final PrimitiveLongIterable nodes;
-        private final HugeGraph graph;
+        private final ThreadLocal<HugeRelationshipIterator> graph;
+        private final HugeRelationshipWeights relationshipWeights;
         private final HugeWeightMapping nodeWeights;
         private final ProgressLogger progressLogger;
         private final Direction direction;
-        private final boolean randomizeOrder;
+        private final long maxNode;
+        private final RandomProvider random;
 
         private InitStep(
                 HugeWeightMapping nodeProperties,
-                HugeLongArray existingLabels,
+                Labels existingLabels,
                 PrimitiveLongIterable nodes,
-                HugeGraph graph,
+                ThreadLocal<HugeRelationshipIterator> graph,
+                HugeRelationshipWeights relationshipWeights,
                 HugeWeightMapping nodeWeights,
                 ProgressLogger progressLogger,
                 Direction direction,
-                boolean randomizeOrder) {
+                long maxNode,
+                RandomProvider random) {
             this.nodeProperties = nodeProperties;
             this.existingLabels = existingLabels;
             this.nodes = nodes;
             this.graph = graph;
+            this.relationshipWeights = relationshipWeights;
             this.nodeWeights = nodeWeights;
             this.progressLogger = progressLogger;
             this.direction = direction;
-            this.randomizeOrder = randomizeOrder;
+            this.maxNode = maxNode;
+            this.random = random;
         }
 
         @Override
@@ -130,111 +132,75 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<
             while (iterator.hasNext()) {
                 long nodeId = iterator.next();
                 long existingLabel = (long) nodeProperties.nodeWeight(nodeId, (double) nodeId);
-                existingLabels.set(nodeId, existingLabel);
+                existingLabels.setLabelFor(nodeId, existingLabel);
             }
         }
 
         @Override
         Computation computeStep() {
             return new ComputeStep(
-                    graph.concurrentCopy(),
                     graph,
+                    relationshipWeights,
                     nodeWeights,
                     progressLogger,
                     direction,
-                    graph.nodeCount() - 1L,
+                    maxNode,
                     existingLabels,
                     nodes,
-                    randomizeOrder
+                    random
             );
         }
     }
 
     private static final class ComputeStep extends Computation implements HugeRelationshipConsumer {
 
-        private final HugeRelationshipIterator graph;
+        private final ThreadLocal<HugeRelationshipIterator> graphs;
         private final HugeRelationshipWeights relationshipWeights;
         private final HugeWeightMapping nodeWeights;
-        private final ProgressLogger progressLogger;
         private final Direction direction;
-        private final long maxNode;
-        private final HugeLongArray existingLabels;
         private final PrimitiveLongIterable nodes;
-        private final LongDoubleHashMap votes;
+        private HugeRelationshipIterator graph;
 
         private ComputeStep(
-                HugeRelationshipIterator graph,
+                ThreadLocal<HugeRelationshipIterator> graphs,
                 HugeRelationshipWeights relationshipWeights,
                 HugeWeightMapping nodeWeights,
                 ProgressLogger progressLogger,
                 Direction direction,
                 final long maxNode,
-                HugeLongArray existingLabels,
+                Labels existingLabels,
                 PrimitiveLongIterable nodes,
-                boolean randomizeOrder) {
-            this.graph = graph;
+                RandomProvider random) {
+            super(existingLabels, progressLogger, maxNode, random);
+            this.graphs = graphs;
             this.relationshipWeights = relationshipWeights;
             this.nodeWeights = nodeWeights;
-            this.progressLogger = progressLogger;
             this.direction = direction;
-            this.maxNode = maxNode;
-            this.existingLabels = existingLabels;
-            this.nodes = RandomlySwitchingLongIterable.of(randomizeOrder, nodes);
-            this.votes = new LongDoubleScatterMap();
+            this.nodes = RandomlySwitchingLongIterable.of(random, nodes);
         }
 
         @Override
         boolean computeAll() {
-            PrimitiveLongIterator iterator = nodes.iterator();
-            boolean didChange = false;
-            while (iterator.hasNext()) {
-                didChange = compute(iterator.next(), didChange);
-            }
-            return didChange;
+            graph = graphs.get();
+            return iterateAll(nodes.iterator());
         }
 
-        private boolean compute(long nodeId, boolean didChange) {
-            votes.clear();
-            long partition = existingLabels.get(nodeId);
-            long previous = partition;
+        @Override
+        void forEach(final long nodeId) {
             graph.forEachRelationship(nodeId, direction, this);
-            double weight = Double.NEGATIVE_INFINITY;
-            for (LongDoubleCursor vote : votes) {
-                if (weight < vote.value) {
-                    weight = vote.value;
-                    partition = vote.key;
-                }
-            }
-            progressLogger.logProgress(nodeId, maxNode);
-            if (partition != previous) {
-                existingLabels.set(nodeId, partition);
-                return true;
-            }
-            return didChange;
+        }
+
+        @Override
+        double weightOf(final long nodeId, final long candidate) {
+            double relationshipWeight = relationshipWeights.weightOf(nodeId, candidate);
+            double nodeWeight = nodeWeights.nodeWeight(candidate);
+            return relationshipWeight * nodeWeight;
         }
 
         @Override
         public boolean accept(final long sourceNodeId, final long targetNodeId) {
-            long partition = existingLabels.get(targetNodeId);
-            double relationshipWeight = relationshipWeights.weightOf(sourceNodeId, targetNodeId);
-            double nodeWeight = nodeWeights.nodeWeight(targetNodeId);
-            double weight = relationshipWeight * nodeWeight;
-            votes.addTo(partition, weight);
+            castVote(sourceNodeId, targetNodeId);
             return true;
-        }
-
-        @Override
-        void release() {
-            // the HPPC release() method allocates new arrays
-            // the clear() method overwrite the existing keys with the default value
-            // we want to throw away all data to allow for GC collection instead.
-
-            if (votes.keys != null) {
-                votes.keys = EMPTY_LONGS;
-                votes.clear();
-                votes.keys = null;
-                votes.values = null;
-            }
         }
     }
 }
