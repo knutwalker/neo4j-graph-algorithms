@@ -307,6 +307,8 @@ abstract class BaseLabelPropagation<
         }
     }
 
+    // TODO: replace with RandomIntIterable, need to change BatchIterables to return ranges instead of iterables
+    //  or something similar
     static final class RandomlySwitchingIntIterable implements PrimitiveIntIterable {
         private final PrimitiveIntIterable inner;
         private final RandomProvider randomize;
