@@ -40,7 +40,7 @@ import java.util.concurrent.ExecutorService;
 import static com.carrotsearch.hppc.Containers.DEFAULT_EXPECTED_ELEMENTS;
 import static com.carrotsearch.hppc.HashContainers.DEFAULT_LOAD_FACTOR;
 
-abstract class BaseLabelPropagation<
+public abstract class BaseLabelPropagation<
         G extends Graph,
         W extends WeightMapping,
         Self extends BaseLabelPropagation<G, W, Self>
@@ -392,13 +392,13 @@ abstract class BaseLabelPropagation<
         }
     }
 
-    static final class RandomlySwitchingLongIterator implements PrimitiveLongIterator {
+    public static final class RandomlySwitchingLongIterator implements PrimitiveLongIterator {
         private final PrimitiveLongIterator delegate;
         private final Random random;
         private boolean hasSkipped;
         private long skipped;
 
-        private RandomlySwitchingLongIterator(PrimitiveLongIterator delegate, Random random) {
+        public RandomlySwitchingLongIterator(PrimitiveLongIterator delegate, Random random) {
             this.delegate = delegate;
             this.random = random;
         }
