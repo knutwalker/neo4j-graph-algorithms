@@ -18,18 +18,17 @@
  */
 package org.neo4j.graphalgo.impl;
 
-import org.neo4j.collection.primitive.PrimitiveIntIterable;
 import org.neo4j.collection.primitive.PrimitiveIntIterator;
 import org.neo4j.graphalgo.api.Graph;
 import org.neo4j.graphalgo.api.NodeProperties;
 import org.neo4j.graphalgo.api.RelationshipConsumer;
 import org.neo4j.graphalgo.api.WeightMapping;
-import org.neo4j.graphalgo.core.utils.ParallelUtil;
 import org.neo4j.graphalgo.core.utils.ProgressLogger;
+import org.neo4j.graphalgo.core.utils.RandomIntIterable;
+import org.neo4j.graphalgo.core.utils.RandomLongIterable;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphdb.Direction;
 
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 
 public final class LabelPropagation extends BaseLabelPropagation<Graph, WeightMapping, LabelPropagation> {
@@ -56,32 +55,25 @@ public final class LabelPropagation extends BaseLabelPropagation<Graph, WeightMa
     }
 
     @Override
-    List<BaseStep> baseSteps(
+    Initialization initStep(
             final Graph graph,
             final Labels labels,
             final WeightMapping nodeProperties,
             final WeightMapping nodeWeights,
             final Direction direction,
-            final RandomProvider random) {
-        return ParallelUtil.readParallel(
-                concurrency,
-                batchSize,
+            final ProgressLogger progressLogger,
+            final RandomProvider randomProvider,
+            final RandomLongIterable nodes) {
+        return new InitStep(
                 graph,
-                (offset, nodes) -> {
-                    InitStep initStep = new InitStep(
-                            graph,
-                            labels,
-                            direction,
-                            random,
-                            getProgressLogger(),
-                            nodes,
-                            nodeProperties,
-                            nodeWeights
-                    );
-                    return asStep(initStep);
-                },
-                executor);
-
+                labels,
+                direction,
+                randomProvider,
+                getProgressLogger(),
+                new RandomIntIterable(nodes),
+                nodeProperties,
+                nodeWeights
+        );
     }
 
     private static final class InitStep extends Initialization {
@@ -91,7 +83,7 @@ public final class LabelPropagation extends BaseLabelPropagation<Graph, WeightMa
         private final Direction direction;
         private final RandomProvider random;
         private final ProgressLogger progressLogger;
-        private final PrimitiveIntIterable nodes;
+        private final RandomIntIterable nodes;
         private final WeightMapping nodeProperties;
         private final WeightMapping nodeWeights;
 
@@ -101,7 +93,7 @@ public final class LabelPropagation extends BaseLabelPropagation<Graph, WeightMa
                 Direction direction,
                 RandomProvider random,
                 ProgressLogger progressLogger,
-                PrimitiveIntIterable nodes,
+                RandomIntIterable nodes,
                 WeightMapping nodeProperties,
                 WeightMapping nodeWeights) {
             this.graph = graph;
@@ -141,7 +133,7 @@ public final class LabelPropagation extends BaseLabelPropagation<Graph, WeightMa
 
         private final Graph graph;
         private final Direction direction;
-        private final PrimitiveIntIterable nodes;
+        private final RandomIntIterable nodes;
         private final WeightMapping nodeWeights;
 
         private ComputeStep(
@@ -150,18 +142,18 @@ public final class LabelPropagation extends BaseLabelPropagation<Graph, WeightMa
                 Direction direction,
                 RandomProvider random,
                 ProgressLogger progressLogger,
-                PrimitiveIntIterable nodes,
+                RandomIntIterable nodes,
                 WeightMapping nodeWeights) {
             super(existingLabels, progressLogger, graph.nodeCount() - 1L, random);
             this.graph = graph;
             this.direction = direction;
-            this.nodes = RandomlySwitchingIntIterable.of(random, nodes);
+            this.nodes = nodes;
             this.nodeWeights = nodeWeights;
         }
 
         @Override
         boolean computeAll() {
-            return iterateAll(nodes.iterator());
+            return iterateAll(nodes.iterator(randomProvider.randomForNewIteration()));
         }
 
         @Override

@@ -22,17 +22,20 @@ import com.carrotsearch.hppc.HashOrderMixing;
 import com.carrotsearch.hppc.LongDoubleHashMap;
 import com.carrotsearch.hppc.LongDoubleScatterMap;
 import com.carrotsearch.hppc.cursors.LongDoubleCursor;
-import org.neo4j.collection.primitive.PrimitiveIntIterable;
 import org.neo4j.collection.primitive.PrimitiveIntIterator;
-import org.neo4j.collection.primitive.PrimitiveLongIterable;
 import org.neo4j.collection.primitive.PrimitiveLongIterator;
 import org.neo4j.graphalgo.api.Graph;
 import org.neo4j.graphalgo.api.WeightMapping;
+import org.neo4j.graphalgo.core.utils.LazyBatchCollection;
 import org.neo4j.graphalgo.core.utils.ParallelUtil;
 import org.neo4j.graphalgo.core.utils.ProgressLogger;
+import org.neo4j.graphalgo.core.utils.RandomLongIterable;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
+import org.neo4j.graphalgo.core.utils.paged.BitUtil;
 import org.neo4j.graphdb.Direction;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
@@ -40,7 +43,7 @@ import java.util.concurrent.ExecutorService;
 import static com.carrotsearch.hppc.Containers.DEFAULT_EXPECTED_ELEMENTS;
 import static com.carrotsearch.hppc.HashContainers.DEFAULT_LOAD_FACTOR;
 
-public abstract class BaseLabelPropagation<
+abstract class BaseLabelPropagation<
         G extends Graph,
         W extends WeightMapping,
         Self extends BaseLabelPropagation<G, W, Self>
@@ -81,14 +84,16 @@ public abstract class BaseLabelPropagation<
 
     abstract Labels initialLabels(long nodeCount, AllocationTracker tracker);
 
-
-    abstract List<BaseStep> baseSteps(
+    abstract Initialization initStep(
             final G graph,
             final Labels labels,
             final W nodeProperties,
             final W nodeWeights,
             final Direction direction,
-            final RandomProvider randomProvider);
+            final ProgressLogger progressLogger,
+            final RandomProvider randomProvider,
+            final RandomLongIterable nodes
+    );
 
     @Override
     Self compute(
@@ -106,7 +111,7 @@ public abstract class BaseLabelPropagation<
         ranIterations = 0L;
         didConverge = false;
 
-        List<BaseStep> baseSteps = baseSteps(graph, labels, nodeProperties, nodeWeights, direction, random);
+        List<BaseStep> baseSteps = baseSteps(direction, random);
 
         long currentIteration = 0L;
         while (running() && currentIteration < maxIterations) {
@@ -134,10 +139,6 @@ public abstract class BaseLabelPropagation<
         return me();
     }
 
-    final BaseStep asStep(Initialization initialization) {
-        return new BaseStep(initialization);
-    }
-
     @Override
     public final long ranIterations() {
         return ranIterations;
@@ -159,6 +160,47 @@ public abstract class BaseLabelPropagation<
         return me();
     }
 
+    private List<BaseStep> baseSteps(Direction direction, RandomProvider random) {
+
+        long nodeCount = graph.nodeCount();
+        long batchSize = adjustBatchSize(nodeCount, (long) this.batchSize);
+
+        Collection<RandomLongIterable> nodeBatches = LazyBatchCollection.of(
+                nodeCount,
+                batchSize,
+                (start, length) -> new RandomLongIterable(start, start + length, random.randomForNewIteration()));
+
+        int threads = nodeBatches.size();
+        List<BaseStep> tasks = new ArrayList<>(threads);
+        for (RandomLongIterable iter : nodeBatches) {
+            Initialization initStep = initStep(
+                    graph,
+                    labels,
+                    nodeProperties,
+                    nodeWeights,
+                    direction,
+                    getProgressLogger(),
+                    random,
+                    iter
+            );
+            BaseStep task = new BaseStep(initStep);
+            tasks.add(task);
+        }
+        ParallelUtil.runWithConcurrency(concurrency, tasks, terminationFlag, executor);
+        return tasks;
+    }
+
+    private long adjustBatchSize(long nodeCount, long batchSize) {
+        if (batchSize <= 0L) {
+            batchSize = 1L;
+        }
+        batchSize = BitUtil.nextHighestPowerOfTwo(batchSize);
+        while (((nodeCount + batchSize + 1L) / batchSize) > (long) Integer.MAX_VALUE) {
+            batchSize = batchSize << 1;
+        }
+        return batchSize;
+    }
+
     static abstract class Initialization implements Step {
         abstract void setExistingLabels();
 
@@ -177,6 +219,7 @@ public abstract class BaseLabelPropagation<
 
     static abstract class Computation implements Step {
 
+        final RandomProvider randomProvider;
         private final Labels existingLabels;
         private final ProgressLogger progressLogger;
         private final double maxNode;
@@ -190,6 +233,7 @@ public abstract class BaseLabelPropagation<
                 final ProgressLogger progressLogger,
                 final long maxNode,
                 final RandomProvider randomProvider) {
+            this.randomProvider = randomProvider;
             this.existingLabels = existingLabels;
             this.progressLogger = progressLogger;
             this.maxNode = (double) maxNode;
@@ -304,124 +348,6 @@ public abstract class BaseLabelPropagation<
         public void run() {
             current.run();
             current = current.next();
-        }
-    }
-
-    // TODO: replace with RandomIntIterable, need to change BatchIterables to return ranges instead of iterables
-    //  or something similar
-    static final class RandomlySwitchingIntIterable implements PrimitiveIntIterable {
-        private final PrimitiveIntIterable inner;
-        private final RandomProvider randomize;
-
-        static PrimitiveIntIterable of(
-                RandomProvider randomize,
-                PrimitiveIntIterable delegate) {
-            return randomize.isRandom()
-                    ? new RandomlySwitchingIntIterable(delegate, randomize)
-                    : delegate;
-        }
-
-        private RandomlySwitchingIntIterable(
-                PrimitiveIntIterable inner,
-                RandomProvider randomize) {
-            this.inner = inner;
-            this.randomize = randomize;
-        }
-
-        @Override
-        public PrimitiveIntIterator iterator() {
-            return new RandomlySwitchingIntIterator(inner.iterator(), randomize.randomForNewIteration());
-        }
-    }
-
-    static final class RandomlySwitchingIntIterator implements PrimitiveIntIterator {
-        private final PrimitiveIntIterator delegate;
-        private final Random random;
-        private boolean hasSkipped;
-        private int skipped;
-
-        private RandomlySwitchingIntIterator(PrimitiveIntIterator delegate, Random random) {
-            this.delegate = delegate;
-            this.random = random;
-        }
-
-        @Override
-        public boolean hasNext() {
-            return hasSkipped || delegate.hasNext();
-        }
-
-        @Override
-        public int next() {
-            if (hasSkipped) {
-                int elem = skipped;
-                hasSkipped = false;
-                return elem;
-            }
-            int next = delegate.next();
-            if (delegate.hasNext() && random.nextBoolean()) {
-                skipped = next;
-                hasSkipped = true;
-                return delegate.next();
-            }
-            return next;
-        }
-    }
-
-    static final class RandomlySwitchingLongIterable implements PrimitiveLongIterable {
-        private final PrimitiveLongIterable inner;
-        private final RandomProvider randomize;
-
-        static PrimitiveLongIterable of(
-                RandomProvider randomize,
-                PrimitiveLongIterable delegate) {
-            return randomize.isRandom()
-                    ? new RandomlySwitchingLongIterable(delegate, randomize)
-                    : delegate;
-        }
-
-        private RandomlySwitchingLongIterable(
-                PrimitiveLongIterable inner,
-                RandomProvider randomize) {
-            this.inner = inner;
-            this.randomize = randomize;
-        }
-
-        @Override
-        public PrimitiveLongIterator iterator() {
-            return new RandomlySwitchingLongIterator(inner.iterator(), randomize.randomForNewIteration());
-        }
-    }
-
-    public static final class RandomlySwitchingLongIterator implements PrimitiveLongIterator {
-        private final PrimitiveLongIterator delegate;
-        private final Random random;
-        private boolean hasSkipped;
-        private long skipped;
-
-        public RandomlySwitchingLongIterator(PrimitiveLongIterator delegate, Random random) {
-            this.delegate = delegate;
-            this.random = random;
-        }
-
-        @Override
-        public boolean hasNext() {
-            return hasSkipped || delegate.hasNext();
-        }
-
-        @Override
-        public long next() {
-            if (hasSkipped) {
-                long elem = skipped;
-                hasSkipped = false;
-                return elem;
-            }
-            long next = delegate.next();
-            if (delegate.hasNext() && random.nextBoolean()) {
-                skipped = next;
-                hasSkipped = true;
-                return delegate.next();
-            }
-            return next;
         }
     }
 }

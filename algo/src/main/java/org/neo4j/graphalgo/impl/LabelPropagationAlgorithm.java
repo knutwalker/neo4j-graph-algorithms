@@ -47,15 +47,15 @@ public abstract class LabelPropagationAlgorithm<Self extends LabelPropagationAlg
     }
 
     public final Self compute(Direction direction, long maxIterations) {
-        return compute(direction, maxIterations, Randoms.DEFAULT_RANDOMNESS);
+        return compute(direction, maxIterations, DefaultRandom.INSTANCE);
+    }
+
+    public final Self compute(Direction direction, long maxIterations, long randomSeed) {
+        return compute(direction, maxIterations, new Random(randomSeed));
     }
 
     public final Self compute(Direction direction, long maxIterations, Random random) {
         return compute(direction, maxIterations, new ProvidedRandom(random));
-    }
-
-    public final Self computeWithoutRandomJitter(Direction direction, long maxIterations) {
-        return compute(direction, maxIterations, Randoms.NO_RANDOMNESS);
     }
 
     abstract Self compute(
@@ -132,24 +132,8 @@ public abstract class LabelPropagationAlgorithm<Self extends LabelPropagationAlg
         boolean isRandom();
     }
 
-    private enum Randoms implements RandomProvider {
-        NO_RANDOMNESS {
-            @Override
-            public Random randomForNewIteration() {
-                return new Random() {
-                    @Override
-                    public boolean nextBoolean() {
-                        return false;
-                    }
-                };
-            }
-
-            @Override
-            public boolean isRandom() {
-                return false;
-            }
-        },
-        DEFAULT_RANDOMNESS {
+    private enum DefaultRandom implements RandomProvider {
+        INSTANCE {
             @Override
             public Random randomForNewIteration() {
                 return ThreadLocalRandom.current();

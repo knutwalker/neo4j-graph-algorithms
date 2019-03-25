@@ -48,6 +48,10 @@ public final class RandomIntIterator implements PrimitiveIntIterator {
         longs = new RandomLongIterator(start, end, random);
     }
 
+    RandomIntIterator(RandomLongIterator longs) {
+        this.longs = longs;
+    }
+
     @Override
     public boolean hasNext() {
         return longs.hasNext();

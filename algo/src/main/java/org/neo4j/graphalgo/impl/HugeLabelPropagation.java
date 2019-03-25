@@ -18,7 +18,6 @@
  */
 package org.neo4j.graphalgo.impl;
 
-import org.neo4j.collection.primitive.PrimitiveLongIterable;
 import org.neo4j.collection.primitive.PrimitiveLongIterator;
 import org.neo4j.graphalgo.api.HugeGraph;
 import org.neo4j.graphalgo.api.HugeNodeProperties;
@@ -26,16 +25,17 @@ import org.neo4j.graphalgo.api.HugeRelationshipConsumer;
 import org.neo4j.graphalgo.api.HugeRelationshipIterator;
 import org.neo4j.graphalgo.api.HugeRelationshipWeights;
 import org.neo4j.graphalgo.api.HugeWeightMapping;
-import org.neo4j.graphalgo.core.utils.ParallelUtil;
 import org.neo4j.graphalgo.core.utils.ProgressLogger;
+import org.neo4j.graphalgo.core.utils.RandomLongIterable;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphalgo.core.utils.paged.HugeLongArray;
 import org.neo4j.graphdb.Direction;
 
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 
 public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, HugeWeightMapping, HugeLabelPropagation> {
+
+    private final ThreadLocal<HugeRelationshipIterator> localGraphs;
 
     public HugeLabelPropagation(
             HugeGraph graph,
@@ -52,6 +52,7 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
                 concurrency,
                 executor,
                 tracker);
+        localGraphs = ThreadLocal.withInitial(graph::concurrentCopy);
     }
 
     @Override
@@ -60,41 +61,34 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
     }
 
     @Override
-    List<BaseStep> baseSteps(
+    Initialization initStep(
             final HugeGraph graph,
             final Labels labels,
             final HugeWeightMapping nodeProperties,
             final HugeWeightMapping nodeWeights,
             final Direction direction,
-            final RandomProvider random) {
-        ThreadLocal<HugeRelationshipIterator> localGraphs = ThreadLocal.withInitial(graph::concurrentCopy);
-        return ParallelUtil.readParallel(
-                concurrency,
-                batchSize,
+            final ProgressLogger progressLogger,
+            final RandomProvider randomProvider,
+            final RandomLongIterable nodes) {
+        return new InitStep(
+                nodeProperties,
+                labels,
+                nodes,
+                localGraphs,
                 graph,
-                executor,
-                (nodeOffset, nodeIds) -> {
-                    InitStep initStep2 = new InitStep(
-                            nodeProperties,
-                            labels,
-                            nodeIds,
-                            localGraphs,
-                            graph,
-                            nodeWeights,
-                            getProgressLogger(),
-                            direction,
-                            graph.nodeCount() - 1L,
-                            random
-                    );
-                    return asStep(initStep2);
-                });
+                nodeWeights,
+                progressLogger,
+                direction,
+                graph.nodeCount() - 1L,
+                randomProvider
+        );
     }
 
     private static final class InitStep extends Initialization {
 
         private final HugeWeightMapping nodeProperties;
         private final Labels existingLabels;
-        private final PrimitiveLongIterable nodes;
+        private final RandomLongIterable nodes;
         private final ThreadLocal<HugeRelationshipIterator> graph;
         private final HugeRelationshipWeights relationshipWeights;
         private final HugeWeightMapping nodeWeights;
@@ -106,7 +100,7 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
         private InitStep(
                 HugeWeightMapping nodeProperties,
                 Labels existingLabels,
-                PrimitiveLongIterable nodes,
+                RandomLongIterable nodes,
                 ThreadLocal<HugeRelationshipIterator> graph,
                 HugeRelationshipWeights relationshipWeights,
                 HugeWeightMapping nodeWeights,
@@ -128,7 +122,7 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
 
         @Override
         void setExistingLabels() {
-            PrimitiveLongIterator iterator = nodes.iterator();
+            PrimitiveLongIterator iterator = nodes.iterator(random.randomForNewIteration());
             while (iterator.hasNext()) {
                 long nodeId = iterator.next();
                 long existingLabel = (long) nodeProperties.nodeWeight(nodeId, (double) nodeId);
@@ -158,7 +152,7 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
         private final HugeRelationshipWeights relationshipWeights;
         private final HugeWeightMapping nodeWeights;
         private final Direction direction;
-        private final PrimitiveLongIterable nodes;
+        private final RandomLongIterable nodes;
         private HugeRelationshipIterator graph;
 
         private ComputeStep(
@@ -169,20 +163,20 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
                 Direction direction,
                 final long maxNode,
                 Labels existingLabels,
-                PrimitiveLongIterable nodes,
+                RandomLongIterable nodes,
                 RandomProvider random) {
             super(existingLabels, progressLogger, maxNode, random);
             this.graphs = graphs;
             this.relationshipWeights = relationshipWeights;
             this.nodeWeights = nodeWeights;
             this.direction = direction;
-            this.nodes = RandomlySwitchingLongIterable.of(random, nodes);
+            this.nodes = nodes;
         }
 
         @Override
         boolean computeAll() {
             graph = graphs.get();
-            return iterateAll(nodes.iterator());
+            return iterateAll(nodes.iterator(randomProvider.randomForNewIteration()));
         }
 
         @Override

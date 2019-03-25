@@ -1,6 +1,7 @@
 package org.neo4j.graphalgo.core.utils;
 
 import org.neo4j.collection.primitive.PrimitiveLongIterator;
+import org.neo4j.graphalgo.core.utils.paged.BitUtil;
 
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
@@ -58,8 +59,7 @@ public final class RandomLongIterator implements PrimitiveLongIterator {
         if (range < 0L || range > (1L << 62)) {
             throw new IndexOutOfBoundsException("[start, end) must not be negative or larger than " + (1L << 62));
         }
-        int bits = Long.SIZE - Long.numberOfLeadingZeros(range - 1L);
-        long modulus = 1L << bits;
+        long modulus = BitUtil.nextHighestPowerOfTwo(range);
 
         this.range = range;
         base = start;
