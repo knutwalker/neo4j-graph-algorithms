@@ -27,6 +27,7 @@ import org.neo4j.internal.kernel.api.exceptions.KernelException;
 import org.neo4j.kernel.impl.proc.Procedures;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 
+import java.util.Collections;
 import java.util.Map;
 
 import static java.util.Collections.singletonMap;
@@ -49,8 +50,8 @@ public class OverlapTest {
             "WITH {item:id(p), categories: collect(distinct id(i))} as userData\n" +
             "WITH collect(userData) as data\n" +
             "CALL algo.similarity.overlap(data, $config) " +
-            "yield p25, p50, p75, p90, p95, p99, p999, p100, nodes, similarityPairs " +
-            "RETURN p25, p50, p75, p90, p95, p99, p999, p100, nodes, similarityPairs";
+            "yield p25, p50, p75, p90, p95, p99, p999, p100, nodes, similarityPairs, computations " +
+            "RETURN p25, p50, p75, p90, p95, p99, p999, p100, nodes, similarityPairs, computations";
 
     public static final String STORE_EMBEDDING_STATEMENT = "MATCH (p:Person)-[:LIKES]->(i:Item) \n" +
             "WITH p, collect(distinct id(i)) as userData\n" +
@@ -167,8 +168,8 @@ public class OverlapTest {
     @Test
     public void topNoverlapStreamTest() {
         Result results = db.execute(STATEMENT_STREAM, map("config",map("top",2)));
-        assert01(results.next());
-        assert02(results.next());
+        assert10(results.next());
+        assert20(results.next());
         assertFalse(results.hasNext());
     }
 
@@ -177,9 +178,33 @@ public class OverlapTest {
         Result results = db.execute(STATEMENT_STREAM, map("config",map("concurrency",1)));
 
         assertTrue(results.hasNext());
-        assert01(results.next());
-        assert02(results.next());
+        assert10(results.next());
+        assert20(results.next());
         assert12(results.next());
+        assertFalse(results.hasNext());
+    }
+
+    @Test
+    public void overlapStreamSourceTargetIdsTest() {
+//        Map<String, Object> config = map(
+//                "concurrency", 1,
+//                "sourceIds", Collections.singletonList(1L),
+//                "targetIds", Collections.singletonList(0L)
+//        );
+
+        Map<String, Object> config = map(
+                "concurrency", 1,
+                "sourceIds", Collections.singletonList(1L)
+        );
+
+        Map<String, Object> params = map("config", config);
+
+        System.out.println(db.execute(STATEMENT_STREAM, params).resultAsString());
+
+        Result results = db.execute(STATEMENT_STREAM, params);
+
+        assertTrue(results.hasNext());
+        assert10(results.next());
         assertFalse(results.hasNext());
     }
 
@@ -190,8 +215,25 @@ public class OverlapTest {
 
         Result results = db.execute(STATEMENT_STREAM, params);
         assertTrue(results.hasNext());
-        assert01(results.next());
-        assert02(results.next());
+        assert10(results.next());
+        assert20(results.next());
+        assertFalse(results.hasNext());
+    }
+
+    @Test
+    public void topKoverlapSourceTargetIdsStreamTest() {
+        Map<String, Object> config = map(
+                "concurrency", 1,
+                "topK", 1,
+                "sourceIds", Collections.singletonList(1L)
+
+        );
+        Map<String, Object> params = map("config", config);
+        System.out.println(db.execute(STATEMENT_STREAM, params).resultAsString());
+
+        Result results = db.execute(STATEMENT_STREAM, params);
+        assertTrue(results.hasNext());
+        assert10(results.next());
         assertFalse(results.hasNext());
     }
 
@@ -304,6 +346,29 @@ public class OverlapTest {
         assertFalse(result.hasNext());
     }
 
+    @Test
+    public void dontComputeComputationsByDefault() {
+        Map<String, Object> params = map("config", map(
+                "write", true,
+                "similarityCutoff", 0.1));
+
+        Result writeResult = db.execute(STATEMENT, params);
+        Map<String, Object> writeRow = writeResult.next();
+        assertEquals(-1L, (long) writeRow.get("computations"));
+    }
+
+    @Test
+    public void numberOfComputations() {
+        Map<String, Object> params = map("config", map(
+                "write", true,
+                "showComputations", true,
+                "similarityCutoff", 0.1));
+
+        Result writeResult = db.execute(STATEMENT, params);
+        Map<String, Object> writeRow = writeResult.next();
+        assertEquals(3L, (long) writeRow.get("computations"));
+    }
+
     private void assert12(Map<String, Object> row) {
         assertEquals(2L, row.get("item1"));
         assertEquals(1L, row.get("item2"));
@@ -317,7 +382,7 @@ public class OverlapTest {
     // a / c = 1 : 1/3
     // b / c = 0 : 0/3 = 0
 
-    private void assert02(Map<String, Object> row) {
+    private void assert20(Map<String, Object> row) {
         assertEquals(2L, row.get("item1"));
         assertEquals(0L, row.get("item2"));
         assertEquals(1L, row.get("count1"));
@@ -326,7 +391,7 @@ public class OverlapTest {
         assertEquals(1d/1d, row.get("similarity"));
     }
 
-    private void assert01(Map<String, Object> row) {
+    private void assert10(Map<String, Object> row) {
         assertEquals(1L, row.get("item1"));
         assertEquals(0L, row.get("item2"));
         assertEquals(2L, row.get("count1"));

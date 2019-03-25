@@ -26,27 +26,27 @@ public class NonWeightedPageRankVariant implements PageRankVariant {
                                          RelationshipIterator relationshipIterator,
                                          WeightedRelationshipIterator weightedRelationshipIterator,
                                          Degrees degrees,
-                                         int partitionCount, int start,
-                                         DegreeCache degreeCache) {
+                                         int partitionSize, int start,
+                                         DegreeCache degreeCache, long nodeCount) {
         return new NonWeightedComputeStep(
                 dampingFactor,
                 sourceNodeIds,
                 relationshipIterator,
                 degrees,
-                partitionCount,
+                partitionSize,
                 start
         );
     }
 
     @Override
-    public HugeNonWeightedComputeStep createHugeComputeStep(double dampingFactor, long[] sourceNodeIds, HugeRelationshipIterator relationshipIterator, HugeDegrees degrees, HugeRelationshipWeights relationshipWeights, AllocationTracker tracker, int partitionCount, long start, DegreeCache aggregatedDegrees) {
+    public HugeNonWeightedComputeStep createHugeComputeStep(double dampingFactor, long[] sourceNodeIds, HugeRelationshipIterator relationshipIterator, HugeDegrees degrees, HugeRelationshipWeights relationshipWeights, AllocationTracker tracker, int partitionSize, long start, DegreeCache aggregatedDegrees, long nodeCount) {
         return new HugeNonWeightedComputeStep(
                 dampingFactor,
                 sourceNodeIds,
                 relationshipIterator,
                 degrees,
                 tracker,
-                partitionCount,
+                partitionSize,
                 start
         );
     }

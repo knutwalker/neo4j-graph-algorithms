@@ -29,6 +29,7 @@ import org.neo4j.internal.kernel.api.exceptions.KernelException;
 import org.neo4j.kernel.impl.proc.Procedures;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 
+import java.util.Collections;
 import java.util.Map;
 
 import static java.util.Collections.singletonMap;
@@ -58,7 +59,7 @@ public class PearsonTest {
             "WITH collect(userData) as data\n" +
 
             "CALL algo.similarity.pearson(data, $config) " +
-            "yield p25, p50, p75, p90, p95, p99, p999, p100, nodes, similarityPairs " +
+            "yield p25, p50, p75, p90, p95, p99, p999, p100, nodes, similarityPairs, computations " +
             "RETURN *";
 
     public static final String STORE_EMBEDDING_STATEMENT = "MATCH (i:Item) WITH i ORDER BY id(i) MATCH (p:Person) OPTIONAL MATCH (p)-[r:LIKES]->(i)\n" +
@@ -254,6 +255,23 @@ public class PearsonTest {
     }
 
     @Test
+    public void pearsonStreamSourceTargetIdsTest() {
+        Map<String, Object> config = map(
+                "concurrency", 1,
+                "sourceIds", Collections.singletonList(0L),
+                "targetIds", Collections.singletonList(1L)
+        );
+        Map<String, Object> params = map("config", config, "missingValue", 0);
+
+        System.out.println(db.execute(STATEMENT_STREAM, params).resultAsString());
+
+        Result results = db.execute(STATEMENT_STREAM, params);
+        assertTrue(results.hasNext());
+        assert01(results.next());
+        assertFalse(results.hasNext());
+    }
+
+    @Test
     public void pearsonSkipStreamTest() {
         Map<String, Object> params = map("config", map("concurrency", 1, "skipValue", Double.NaN), "missingValue", Double.NaN);
 
@@ -302,6 +320,24 @@ public class PearsonTest {
         assert01(flip(results.next()));
         assert23(results.next());
         assert23(flip(results.next()));
+        assertFalse(results.hasNext());
+    }
+
+    @Test
+    public void topKPearsonSourceTargetIdStreamTest() {
+        Map<String, Object> config = map(
+                "concurrency", 1,
+                "topK", 1,
+                "sourceIds", Collections.singletonList(0L)
+
+        );
+        Map<String, Object> params = map("config", config, "missingValue", 0);
+
+        System.out.println(db.execute(STATEMENT_STREAM, params).resultAsString());
+
+        Result results = db.execute(STATEMENT_STREAM, params);
+        assertTrue(results.hasNext());
+        assert01(results.next());
         assertFalse(results.hasNext());
     }
 
@@ -433,6 +469,29 @@ public class PearsonTest {
         assertEquals((double) row.get("score"), 0.98, 0.01);
 
         assertFalse(result.hasNext());
+    }
+
+    @Test
+    public void dontComputeComputationsByDefault() {
+        Map<String, Object> params = map("config", map(
+                "write", true,
+                "similarityCutoff", 0.1));
+
+        Result writeResult = db.execute(STATEMENT, params);
+        Map<String, Object> writeRow = writeResult.next();
+        assertEquals(-1L, (long) writeRow.get("computations"));
+    }
+
+    @Test
+    public void numberOfComputations() {
+        Map<String, Object> params = map("config", map(
+                "write", true,
+                "showComputations", true,
+                "similarityCutoff", 0.1));
+
+        Result writeResult = db.execute(STATEMENT, params);
+        Map<String, Object> writeRow = writeResult.next();
+        assertEquals(6L, (long) writeRow.get("computations"));
     }
 
     private void assert23(Map<String, Object> row) {

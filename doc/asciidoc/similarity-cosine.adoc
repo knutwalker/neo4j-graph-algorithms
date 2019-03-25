@@ -11,6 +11,15 @@ link:http://en.wikipedia.org/wiki/Cosine_similarity[Cosine similarity] is the co
 It is the dot product of the two vectors divided by the product of the two vectors' lengths (or magnitudes).
 // end::introduction[]
 
+This section includes:
+
+* <<algorithms-similarity-cosine-context, History and explanation>>
+* <<algorithms-similarity-cosine-usecase, Use-cases - when to use the Cosine Similarity algorithm>>
+* <<algorithms-similarity-cosine-sample, Cosine Similarity algorithm sample>>
+* <<algorithms-similarity-cosine-cypher-projection, Cypher projection>>
+* <<algorithms-similarity-cosine-skipping-values, Skipping values>>
+* <<algorithms-similarity-cosine-syntax, Syntax>>
+
 
 [[algorithms-similarity-cosine-context]]
 == History and explanation
@@ -226,11 +235,11 @@ include::scripts/similarity-cosine.cypher[tag=query]
 |===
 // end::query[]
 
+
 [[algorithms-similarity-cosine-cypher-projection]]
 == Cypher projection
 
-If the similarity lists are very large they can take up a lot of memory.
-For cases where those lists contain lots of values that should be skipped, you can use the less memory intensive approach of using Cypher statements to project the graph instead.
+include::cypher-projection.adoc[tag=similarity-explanation]
 
 .Set `graph:'cypher'` in the config:
 
@@ -257,6 +266,7 @@ include::scripts/similarity-cosine.cypher[tag=create-sample-embedding-graph]
 ----
 include::scripts/similarity-cosine.cypher[tag=embedding-graph-stream]
 ----
+
 
 [[algorithms-similarity-cosine-syntax]]
 == Syntax
@@ -347,4 +357,3 @@ YIELD item1, item2, count1, count2, intersection, similarity
 | `intersection` | int  | The number of intersecting values in the two nodes `targets` lists.
 | `similarity`   | int  | The cosine similarity of the two nodes.
 |===
-

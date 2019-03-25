@@ -124,7 +124,7 @@ RETURN *
 
 CALL algo.pageRank(
   'MATCH (p:Page) RETURN id(p) as id',
-  'MATCH (p1:Page)-[:Link]->(p2:Page) RETURN id(p1) as source, id(p2) as target',
+  'MATCH (p1:Page)-[:LINKS]->(p2:Page) RETURN id(p1) as source, id(p2) as target',
   {graph:'cypher', iterations:5, write: true}
 )
 

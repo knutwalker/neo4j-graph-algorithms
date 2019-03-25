@@ -21,15 +21,19 @@ package org.neo4j.graphalgo.linkprediction;
 import org.neo4j.graphalgo.core.ProcedureConfiguration;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.Node;
-import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.RelationshipType;
+import org.neo4j.kernel.internal.GraphDatabaseAPI;
+import org.neo4j.procedure.Context;
 import org.neo4j.procedure.Description;
 import org.neo4j.procedure.Name;
 import org.neo4j.procedure.UserFunction;
 
-import java.util.*;
+import java.util.Map;
+import java.util.Set;
 
 public class LinkPrediction {
+    @Context
+    public GraphDatabaseAPI api;
 
     @UserFunction("algo.linkprediction.adamicAdar")
     @Description("algo.linkprediction.adamicAdar(node1:Node, node2:Node, {relationshipQuery:'relationshipName', direction:'BOTH'}) " +
@@ -46,9 +50,8 @@ public class LinkPrediction {
         RelationshipType relationshipType = configuration.getRelationship();
         Direction direction = configuration.getDirection(Direction.BOTH);
 
-        Set<Node> neighbors = findPotentialNeighbors(node1, relationshipType, direction);
-        neighbors.removeIf(node -> noCommonNeighbors(node, relationshipType, direction, node2));
-        return neighbors.stream().mapToDouble(nb -> 1.0 / Math.log(degree(relationshipType, direction, nb))).sum();
+        Set<Node> neighbors = new NeighborsFinder(api).findCommonNeighbors(node1, node2, relationshipType, direction);
+        return neighbors.stream().mapToDouble(nb -> 1.0 / Math.log(degree(nb, relationshipType, direction))).sum();
     }
 
     @UserFunction("algo.linkprediction.resourceAllocation")
@@ -66,9 +69,8 @@ public class LinkPrediction {
         RelationshipType relationshipType = configuration.getRelationship();
         Direction direction = configuration.getDirection(Direction.BOTH);
 
-        Set<Node> neighbors = findPotentialNeighbors(node1, relationshipType, direction);
-        neighbors.removeIf(node -> noCommonNeighbors(node, relationshipType, direction, node2));
-        return neighbors.stream().mapToDouble(nb -> 1.0 / degree(relationshipType, direction, nb)).sum();
+        Set<Node> neighbors = new NeighborsFinder(api).findCommonNeighbors(node1, node2, relationshipType, direction);
+        return neighbors.stream().mapToDouble(nb -> 1.0 / degree(nb, relationshipType, direction)).sum();
     }
 
     @UserFunction("algo.linkprediction.commonNeighbors")
@@ -84,37 +86,52 @@ public class LinkPrediction {
         RelationshipType relationshipType = configuration.getRelationship();
         Direction direction = configuration.getDirection(Direction.BOTH);
 
-        Set<Node> neighbors = findPotentialNeighbors(node1, relationshipType, direction);
-        neighbors.removeIf(node -> noCommonNeighbors(node, relationshipType, direction, node2));
+        Set<Node> neighbors = new NeighborsFinder(api).findCommonNeighbors(node1, node2, relationshipType, direction);
         return neighbors.size();
     }
 
-    private Set<Node> findPotentialNeighbors(@Name("node1") Node node1, RelationshipType relationshipType, Direction direction) {
-        Set<Node> neighbors = new HashSet<>();
-
-        for (Relationship rel : loadRelationships(node1, relationshipType, direction)) {
-            Node endNode = rel.getEndNode();
-            neighbors.add(endNode);
+    @UserFunction("algo.linkprediction.preferentialAttachment")
+    @Description("algo.linkprediction.preferentialAttachment(node1:Node, node2:Node, {relationshipQuery:'relationshipName', direction:'BOTH'}) " +
+            "given two nodes, calculate Preferential Attachment")
+    public double preferentialAttachment(@Name("node1") Node node1, @Name("node2") Node node2,
+                                       @Name(value = "config", defaultValue = "{}") Map<String, Object> config) {
+        if (node1 == null || node2 == null) {
+            throw new RuntimeException("Nodes must not be null");
         }
-        return neighbors;
+
+        ProcedureConfiguration configuration = ProcedureConfiguration.create(config);
+        RelationshipType relationshipType = configuration.getRelationship();
+        Direction direction = configuration.getDirection(Direction.BOTH);
+
+        return degree(node1, relationshipType, direction) * degree(node2, relationshipType, direction);
     }
 
-    private int degree(RelationshipType relationshipType, Direction direction, Node node) {
+    @UserFunction("algo.linkprediction.totalNeighbors")
+    @Description("algo.linkprediction.totalNeighbors(node1:Node, node2:Node, {relationshipQuery:'relationshipName', direction:'BOTH'}) " +
+            "given two nodes, calculate Total Neighbors")
+    public double totalNeighbors(@Name("node1") Node node1, @Name("node2") Node node2,
+                                         @Name(value = "config", defaultValue = "{}") Map<String, Object> config) {
+        ProcedureConfiguration configuration = ProcedureConfiguration.create(config);
+        RelationshipType relationshipType = configuration.getRelationship();
+        Direction direction = configuration.getDirection(Direction.BOTH);
+
+        NeighborsFinder neighborsFinder = new NeighborsFinder(api);
+        return neighborsFinder.findNeighbors(node1, node2, relationshipType, direction).size();
+    }
+
+    @UserFunction("algo.linkprediction.sameCommunity")
+    @Description("algo.linkprediction.sameCommunity(node1:Node, node2:Node, communityProperty: String) " +
+            "given two nodes, indicates if they have the same community")
+    public double sameCommunity(@Name("node1") Node node1, @Name("node2") Node node2,
+                                 @Name(value = "communityProperty", defaultValue = "community") String communityProperty) {
+        if(!node1.hasProperty(communityProperty) || !node2.hasProperty(communityProperty)) {
+            return 0.0;        }
+
+        return node1.getProperty(communityProperty).equals(node2.getProperty(communityProperty)) ? 1.0 : 0.0;
+    }
+
+    private int degree(Node node, RelationshipType relationshipType, Direction direction) {
         return relationshipType == null ? node.getDegree(direction) : node.getDegree(relationshipType, direction);
     }
-
-    private Iterable<Relationship> loadRelationships(Node node, RelationshipType relationshipType, Direction direction) {
-        return relationshipType == null ? node.getRelationships(direction) : node.getRelationships(relationshipType, direction);
-    }
-
-    private boolean noCommonNeighbors(Node node, RelationshipType relationshipType, Direction direction, Node node2) {
-        for (Relationship rel : loadRelationships(node, relationshipType, direction)) {
-            if (rel.getOtherNode(node).equals(node2)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
 
 }

@@ -19,6 +19,10 @@
       </d:tocentry>
       <d:tocentry linkend="algorithms-harmonic-centrality"><?dbhtml filename="algorithms/harmonic-centrality/index.html"?>
       </d:tocentry>
+      <d:tocentry linkend="algorithms-eigenvector"><?dbhtml filename="algorithms/eigenvector-centrality/index.html"?>
+      </d:tocentry>
+      <d:tocentry linkend="algorithms-degree-centrality"><?dbhtml filename="algorithms/degree-centrality/index.html"?>
+      </d:tocentry>
     </d:tocentry>
 
     <d:tocentry linkend="algorithms-community"><?dbhtml filename="algorithms/community/index.html"?>
@@ -71,7 +75,13 @@
       </d:tocentry>
       <d:tocentry linkend="algorithms-linkprediction-common-neighbors"><?dbhtml filename="algorithms/linkprediction-common-neighbors/index.html"?>
       </d:tocentry>
+      <d:tocentry linkend="algorithms-linkprediction-preferential-attachment"><?dbhtml filename="algorithms/linkprediction-preferential-attachment/index.html"?>
+      </d:tocentry>
       <d:tocentry linkend="algorithms-linkprediction-resource-allocation"><?dbhtml filename="algorithms/linkprediction-resource-allocation/index.html"?>
+      </d:tocentry>
+      <d:tocentry linkend="algorithms-linkprediction-same-community"><?dbhtml filename="algorithms/linkprediction-same-community/index.html"?>
+      </d:tocentry>
+      <d:tocentry linkend="algorithms-linkprediction-total-neighbors"><?dbhtml filename="algorithms/linkprediction-total-neighbors/index.html"?>
       </d:tocentry>
     </d:tocentry>
 

@@ -27,9 +27,9 @@ import org.neo4j.internal.kernel.api.exceptions.KernelException;
 import org.neo4j.kernel.impl.proc.Procedures;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 
+import java.util.Collections;
 import java.util.Map;
 
-import static java.lang.Math.sqrt;
 import static java.util.Collections.singletonMap;
 import static org.junit.Assert.*;
 import static org.neo4j.helpers.collection.MapUtil.map;
@@ -49,7 +49,7 @@ public class JaccardTest {
             "WITH {item:id(p), categories: collect(distinct id(i))} as userData\n" +
             "WITH collect(userData) as data\n" +
             "CALL algo.similarity.jaccard(data, $config) " +
-            "yield p25, p50, p75, p90, p95, p99, p999, p100, nodes, similarityPairs " +
+            "yield p25, p50, p75, p90, p95, p99, p999, p100, nodes, similarityPairs, computations " +
             "RETURN *";
 
     public static final String STORE_EMBEDDING_STATEMENT = "MATCH (p:Person)-[:LIKES]->(i:Item) \n" +
@@ -120,7 +120,6 @@ public class JaccardTest {
         // b / c = 0 : 0/3 = 0
     }
 
-
     @Test
     public void jaccardSingleMultiThreadComparision() {
         int size = 333;
@@ -177,6 +176,30 @@ public class JaccardTest {
         assert01(results.next());
         assert02(results.next());
         assert12(results.next());
+        assertFalse(results.hasNext());
+    }
+
+    @Test
+    public void jaccardStreamSourceTargetIdsTest() {
+        Result results = db.execute(STATEMENT_STREAM, map("config",map(
+                "concurrency",1,
+                "targetIds", Collections.singletonList(1L),
+                "sourceIds", Collections.singletonList(0L))));
+
+        assertTrue(results.hasNext());
+        assert01(results.next());
+        assertFalse(results.hasNext());
+    }
+
+    @Test
+    public void jaccardStreamSourceTargetIdsTopKTest() {
+        Result results = db.execute(STATEMENT_STREAM, map("config",map(
+                "concurrency",1,
+                "topK", 1,
+                "sourceIds", Collections.singletonList(0L))));
+
+        assertTrue(results.hasNext());
+        assert01(results.next());
         assertFalse(results.hasNext());
     }
 
@@ -305,6 +328,29 @@ public class JaccardTest {
         assertEquals((double) row.get("score"), 0.33, 0.01);
 
         assertFalse(result.hasNext());
+    }
+
+    @Test
+    public void dontComputeComputationsByDefault() {
+        Map<String, Object> params = map("config", map(
+                "write", true,
+                "similarityCutoff", 0.1));
+
+        Result writeResult = db.execute(STATEMENT, params);
+        Map<String, Object> writeRow = writeResult.next();
+        assertEquals(-1L, (long) writeRow.get("computations"));
+    }
+
+    @Test
+    public void numberOfComputations() {
+        Map<String, Object> params = map("config", map(
+                "write", true,
+                "showComputations", true,
+                "similarityCutoff", 0.1));
+
+        Result writeResult = db.execute(STATEMENT, params);
+        Map<String, Object> writeRow = writeResult.next();
+        assertEquals(3L, (long) writeRow.get("computations"));
     }
 
     private void assert12(Map<String, Object> row) {

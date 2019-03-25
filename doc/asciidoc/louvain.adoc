@@ -14,6 +14,19 @@ The Louvain algorithm is one of the fastest modularity-based algorithms, and wor
 It also reveals a hierarchy of communities at different scales, which can be useful for understanding the global functioning of a network.
 // end::introduction[]
 
+This section includes:
+
+* <<algorithms-louvain-context, History and explanation>>
+* <<algorithms-louvain-usecase, Use-cases - when to use the Louvain algorithm>>
+* <<algorithms-louvain-limitations, Constraints - when not to use the Louvain algorithm>>
+* <<algorithms-louvain-sample, Louvain algorithm sample>>
+* <<algorithms-louvain-hierarchical, Hierarchical Louvain algorithm sample>>
+* <<algorithms-louvain-pre-defined, Pre-defined communities>>
+* <<algorithms-louvain-hgp, Huge graph projection>>
+* <<algorithms-louvain-cp, Cypher projection>>
+* <<algorithms-louvain-syntax, Syntax>>
+* <<algorithms-louvain-support, Graph type support>>
+
 
 [[algorithms-louvain-context]]
 == History and explanation
@@ -130,6 +143,7 @@ Mark, Doug, and Charles are all friends with each other, as are Bridget, Alice, 
 Charles is the only one who has friends in both communities, but he has more in community 4 so he fits better in that one.
 // end::stream-sample-graph-explanation[]
 
+
 [[algorithms-louvain-hierarchical]]
 == Hierarchical Louvain algorithm sample
 
@@ -174,9 +188,10 @@ include::scripts/louvain.cypher[tag=write-hierarchical-sample-graph]
 Our algorithm found two hierarchical levels of communities.
 
 On the first level it found three communities with Alice, Bridget and Michael forming the first community, Charles, Doug and Mark forming the second one and Karin and Amy forming the third one.
-On the second level it found two communities. Alice, Bridget and Michael stay in the same community, but the other two communities merge into a single one. 
+On the second level it found two communities. Alice, Bridget and Michael stay in the same community, but the other two communities merge into a single one.
 
 // end::stream-hierarchical-sample-graph-explanation[]
+
 
 [[algorithms-louvain-pre-defined]]
 == Pre-defined communities
@@ -220,6 +235,33 @@ In this example the pre-defined communities are read from the `community` proper
 | Amy     | 1
 |===
 // end::stream-pre-defined-sample-graph-result[]
+
+
+[[algorithms-louvain-hgp]]
+== Huge graph projection
+
+include::huge-projection.adoc[tag=explanation]
+
+.Set `graph:'huge'` in the config:
+
+[source, cypher]
+----
+include::scripts/louvain.cypher[tag=huge-projection]
+----
+
+
+[[algorithms-louvain-cp]]
+== Cypher projection
+
+include::cypher-projection.adoc[tag=explanation]
+
+.Set `graph:'cypher'` in the config:
+
+[source,cypher]
+----
+include::scripts/louvain.cypher[tag=cypher-loading]
+----
+
 
 [[algorithms-louvain-syntax]]
 == Syntax
@@ -314,31 +356,7 @@ YIELD nodeId, community - yields a community to each node id
 |===
 
 
-== Huge graph projection
-
-If our projected graph contains more than 2 billion nodes or relationships, we need to use huge graph projection, as the default label and relationship-type projection has a limitation of 2 billion nodes and 2 billion relationships.
-
-.Set `graph:'huge'` in the config:
-
-[source, cypher]
-----
-include::scripts/louvain.cypher[tag=huge-projection]
-----
-
-
-== Cypher projection
-
-If label and relationship-type are not selective enough to describe your subgraph to run the algorithm on, you can use Cypher statements to load or project subsets of your graph.
-This can also be used to run algorithms on a virtual graph.
-
-.Set `graph:'cypher'` in the config:
-
-[source,cypher]
-----
-include::scripts/louvain.cypher[tag=cypher-loading]
-----
-
-
+[[algorithms-louvain-support]]
 == Graph type support
 
 The Louvain algorithm supports the following graph types:

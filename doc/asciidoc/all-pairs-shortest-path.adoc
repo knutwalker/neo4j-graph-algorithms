@@ -11,6 +11,14 @@ The All Pairs Shortest Path (APSP) calculates the shortest (weighted) path betwe
 This algorithm has optimisations that make it quicker than calling the Single Source Shortest Path algorithm for every pair of nodes in the graph.
 // end::introduction[]
 
+This section includes:
+
+* <<algorithm-all-pairs-shortest-path-context, History and explanation>>
+* <<algorithm-all-pairs-shortest-path-usecase, Use-cases - when to use the All Pairs Shortest Path algorithm>>
+* <<algorithm-all-pairs-shortest-path-sample, All Pairs Shortest Path algorithm sample>>
+* <<algorithm-all-pairs-shortest-path-hgp, Huge graph projection>>
+* <<algorithm-all-pairs-shortest-path-imp, Implementations>>
+
 
 [[algorithm-all-pairs-shortest-path-context]]
 == History and explanation
@@ -91,9 +99,10 @@ include::scripts/single-shortest-path.cypher[tag=all-pairs-bidirected-graph]
 ----
 
 
+[[algorithm-all-pairs-shortest-path-hgp]]
 == Huge graph projection
 
-If our projected graph contains more than 2 billion nodes or relationships, we need to use huge graph projection, as the default label and relationship-type projection has a limitation of 2 billion nodes and 2 billion relationships.
+include::huge-projection.adoc[tag=explanation]
 
 .Set `graph:'huge'` in the config:
 
@@ -103,6 +112,7 @@ include::scripts/single-shortest-path.cypher[tag=all-pairs-huge-projection]
 ----
 
 
+[[algorithm-all-pairs-shortest-path-imp]]
 == Implementations
 
 `algo.allShortestPaths.stream`

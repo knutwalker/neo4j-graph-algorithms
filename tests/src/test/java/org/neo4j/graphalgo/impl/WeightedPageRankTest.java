@@ -33,6 +33,7 @@ import org.neo4j.graphalgo.core.huge.loader.HugeGraphFactory;
 import org.neo4j.graphalgo.core.neo4jview.GraphViewFactory;
 import org.neo4j.graphalgo.impl.pagerank.PageRankAlgorithm;
 import org.neo4j.graphalgo.impl.pagerank.PageRankResult;
+import org.neo4j.graphalgo.impl.results.CentralityResult;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Transaction;
@@ -183,7 +184,7 @@ public final class WeightedPageRankTest {
                     .load(graphImpl);
         }
 
-        final PageRankResult rankResult = PageRankAlgorithm
+        final CentralityResult rankResult = PageRankAlgorithm
                 .weightedOf(graph, 0.85, LongStream.empty())
                 .compute(40)
                 .result();
@@ -235,7 +236,7 @@ public final class WeightedPageRankTest {
                     .load(graphImpl);
         }
 
-        final PageRankResult rankResult = PageRankAlgorithm
+        final CentralityResult rankResult = PageRankAlgorithm
                 .weightedOf(graph, 0.85, LongStream.empty())
                 .compute(40)
                 .result();
@@ -287,7 +288,7 @@ public final class WeightedPageRankTest {
                     .load(graphImpl);
         }
 
-        final PageRankResult rankResult = PageRankAlgorithm
+        final CentralityResult rankResult = PageRankAlgorithm
                 .weightedOf(graph, 0.85, LongStream.empty())
                 .compute(40)
                 .result();
@@ -339,7 +340,7 @@ public final class WeightedPageRankTest {
                     .load(graphImpl);
         }
 
-        final PageRankResult rankResult = PageRankAlgorithm
+        final CentralityResult rankResult = PageRankAlgorithm
                 .weightedOf(graph, 0.85, LongStream.empty())
                 .compute(40)
                 .result();
@@ -391,7 +392,7 @@ public final class WeightedPageRankTest {
                     .load(graphImpl);
         }
 
-        final PageRankResult rankResult = PageRankAlgorithm
+        final CentralityResult rankResult = PageRankAlgorithm
                 .weightedOf(graph, 0.85, LongStream.empty())
                 .compute(40)
                 .result();

@@ -108,6 +108,13 @@ public final class ParallelUtil {
         return Math.max(minBatchSize, targetBatchSize);
     }
 
+    public static int adjustBatchSize(
+            int nodeCount,
+            int concurrency) {
+        return adjustBatchSize(nodeCount, concurrency, DEFAULT_BATCH_SIZE);
+    }
+
+
     public static long adjustBatchSize(
             long nodeCount,
             int concurrency,
@@ -667,7 +674,6 @@ public final class ParallelUtil {
             int maxWaitRetries,
             TerminationFlag terminationFlag,
             ExecutorService executor) {
-
         if (!canRunInParallel(executor)
                 || tasks.size() == 1
                 || concurrency <= 1) {

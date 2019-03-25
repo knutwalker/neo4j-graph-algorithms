@@ -1,18 +1,18 @@
 /**
  * Copyright (c) 2017 "Neo4j, Inc." <http://neo4j.com>
- *
+ * <p>
  * This file is part of Neo4j Graph Algorithms <http://github.com/neo4j-contrib/neo4j-graph-algorithms>.
- *
+ * <p>
  * Neo4j Graph Algorithms is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
+ * <p>
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
+ * <p>
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
@@ -23,17 +23,16 @@ import org.neo4j.collection.primitive.PrimitiveIntIterator;
 import org.neo4j.graphalgo.api.*;
 import org.neo4j.graphalgo.core.utils.ParallelUtil;
 import org.neo4j.graphalgo.core.utils.Pools;
-import org.neo4j.graphalgo.core.write.Exporter;
-import org.neo4j.graphalgo.core.write.PropertyTranslator;
-import org.neo4j.graphalgo.core.write.Translators;
 import org.neo4j.graphalgo.impl.Algorithm;
+import org.neo4j.graphalgo.impl.results.CentralityResult;
+import org.neo4j.graphalgo.impl.results.DoubleArrayResult;
+import org.neo4j.graphalgo.impl.results.PartitionedPrimitiveDoubleArrayResult;
 import org.neo4j.graphdb.Direction;
 
 import java.util.*;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.LongStream;
-
-import static org.neo4j.graphalgo.core.utils.ArrayUtil.binaryLookup;
 
 
 /**
@@ -96,8 +95,8 @@ public class PageRank extends Algorithm<PageRank> implements PageRankAlgorithm {
      * {@link #PageRank(ExecutorService, int, int, IdMapping, NodeIterator, RelationshipIterator, Degrees, double)}
      */
     PageRank(Graph graph,
-            double dampingFactor,
-            LongStream sourceNodeIds,
+             double dampingFactor,
+             LongStream sourceNodeIds,
              PageRankVariant pageRankVariant) {
         this(
                 null,
@@ -107,7 +106,7 @@ public class PageRank extends Algorithm<PageRank> implements PageRankAlgorithm {
                 dampingFactor,
                 sourceNodeIds,
                 pageRankVariant
-                );
+        );
     }
 
     /**
@@ -147,7 +146,8 @@ public class PageRank extends Algorithm<PageRank> implements PageRankAlgorithm {
                 partitions,
                 executor,
                 pageRankVariant,
-                degreeComputer);
+                degreeComputer,
+                graph.nodeCount());
     }
 
     /**
@@ -161,7 +161,7 @@ public class PageRank extends Algorithm<PageRank> implements PageRankAlgorithm {
     }
 
     @Override
-    public PageRankResult result() {
+    public CentralityResult result() {
         return computeSteps.getPageRank();
     }
 
@@ -224,7 +224,8 @@ public class PageRank extends Algorithm<PageRank> implements PageRankAlgorithm {
             List<Partition> partitions,
             ExecutorService pool,
             PageRankVariant pageRankVariant,
-            DegreeComputer degreeComputer) {
+            DegreeComputer degreeComputer,
+            long nodeCount) {
         if (concurrency <= 0) {
             concurrency = Pools.DEFAULT_QUEUE_SIZE;
         }
@@ -261,7 +262,8 @@ public class PageRank extends Algorithm<PageRank> implements PageRankAlgorithm {
                     degrees,
                     partitionCount,
                     start,
-                    degreeCache
+                    degreeCache,
+                    nodeCount
             ));
         }
 
@@ -333,10 +335,10 @@ public class PageRank extends Algorithm<PageRank> implements PageRankAlgorithm {
             Arrays.setAll(scores, i -> new int[stepSize][]);
         }
 
-        PageRankResult getPageRank() {
+        CentralityResult getPageRank() {
             ComputeStep firstStep = steps.get(0);
             if (steps.size() == 1) {
-                return new PrimitiveDoubleArrayResult(firstStep.pageRank());
+                return new DoubleArrayResult(firstStep.pageRank());
             }
             double[][] results = new double[steps.size()][];
             Iterator<ComputeStep> iterator = steps.iterator();
@@ -350,25 +352,51 @@ public class PageRank extends Algorithm<PageRank> implements PageRankAlgorithm {
         private void run(int iterations) {
             // initialize data structures
             ParallelUtil.runWithConcurrency(concurrency, steps, pool);
-            for (int i = 0; i < iterations && running(); i++) {
+            for (int iteration = 0; iteration < iterations && running(); iteration++) {
                 // calculate scores
-                ParallelUtil.runWithConcurrency(concurrency, steps, pool);
-                synchronizeScores();
+                ParallelUtil.runWithConcurrency(concurrency, steps, 3, 1, TimeUnit.SECONDS, pool);
+
                 // sync scores
-                ParallelUtil.runWithConcurrency(concurrency, steps, pool);
+                synchronizeScores();
+                ParallelUtil.runWithConcurrency(concurrency, steps, 3, 1, TimeUnit.SECONDS, pool);
+
+                // normalize deltas
+                normalizeDeltas(iteration);
+                ParallelUtil.runWithConcurrency(concurrency, steps, 3, 1, TimeUnit.SECONDS, pool);
             }
+        }
+
+        private void normalizeDeltas(int iteration) {
+            double l2Norm = computeNorm();
+
+            for (ComputeStep step : steps) {
+                step.prepareNormalizeDeltas(l2Norm, iteration);
+            }
+        }
+
+        private double computeNorm() {
+            double l2Norm = 0.0;
+            for (ComputeStep step : steps) {
+                double[] deltas = step.deltas();
+                l2Norm += Arrays.stream(deltas).map(score -> score * score).sum();
+            }
+
+            l2Norm = Math.sqrt(l2Norm);
+
+            l2Norm = l2Norm <= 0 ? 1 : l2Norm;
+            return l2Norm;
         }
 
         private void synchronizeScores() {
-            int stepSize = steps.size();
+            int numberOfSteps = steps.size();
             int[][][] scores = this.scores;
-            int i;
-            for (i = 0; i < stepSize; i++) {
-                synchronizeScores(steps.get(i), i, scores);
+            int stepIndex;
+            for (stepIndex = 0; stepIndex < numberOfSteps; stepIndex++) {
+                synchronizeScoresForStep(steps.get(stepIndex), stepIndex, scores);
             }
         }
 
-        private void synchronizeScores(
+        private void synchronizeScoresForStep(
                 ComputeStep step,
                 int idx,
                 int[][][] scores) {
@@ -386,69 +414,4 @@ public class PageRank extends Algorithm<PageRank> implements PageRankAlgorithm {
         }
     }
 
-    private static final class PartitionedPrimitiveDoubleArrayResult implements PageRankResult, PropertyTranslator.OfDouble<double[][]> {
-        private final double[][] partitions;
-        private final int[] starts;
-
-        private PartitionedPrimitiveDoubleArrayResult(
-                double[][] partitions,
-                int[] starts) {
-            this.partitions = partitions;
-            this.starts = starts;
-        }
-
-        @Override
-        public void export(
-                final String propertyName,
-                final Exporter exporter) {
-            exporter.write(
-                    propertyName,
-                    partitions,
-                    this
-            );
-        }
-
-        @Override
-        public double toDouble(final double[][] data, final long nodeId) {
-            int idx = binaryLookup((int) nodeId, starts);
-            return data[idx][(int) (nodeId - starts[idx])];
-        }
-
-        @Override
-        public double score(final int nodeId) {
-            int idx = binaryLookup(nodeId, starts);
-            return partitions[idx][nodeId - starts[idx]];
-        }
-
-        @Override
-        public double score(final long nodeId) {
-            return toDouble(partitions, nodeId);
-        }
-    }
-
-    private static final class PrimitiveDoubleArrayResult implements PageRankResult {
-        private final double[] result;
-
-        private PrimitiveDoubleArrayResult(double[] result) {
-            super();
-            this.result = result;
-        }
-
-        @Override
-        public double score(final int nodeId) {
-            return result[nodeId];
-        }
-
-        @Override
-        public double score(final long nodeId) {
-            return score((int) nodeId);
-        }
-
-        @Override
-        public void export(
-                final String propertyName,
-                final Exporter exporter) {
-            exporter.write(propertyName, result, Translators.DOUBLE_ARRAY_TRANSLATOR);
-        }
-    }
 }

@@ -28,9 +28,9 @@ import org.neo4j.internal.kernel.api.exceptions.KernelException;
 import org.neo4j.kernel.impl.proc.Procedures;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 
+import java.util.Collections;
 import java.util.Map;
 
-import static java.lang.Math.sqrt;
 import static java.util.Collections.singletonMap;
 import static org.junit.Assert.*;
 import static org.neo4j.helpers.collection.MapUtil.map;
@@ -56,7 +56,7 @@ public class CosineTest {
             "WITH collect(userData) as data\n" +
 
             "CALL algo.similarity.cosine(data, $config) " +
-            "yield p25, p50, p75, p90, p95, p99, p999, p100, nodes, similarityPairs " +
+            "yield p25, p50, p75, p90, p95, p99, p999, p100, nodes, similarityPairs, computations " +
             "RETURN *";
 
     public static final String STORE_EMBEDDING_STATEMENT = "MATCH (i:Item) WITH i ORDER BY id(i) MATCH (p:Person) OPTIONAL MATCH (p)-[r:LIKES]->(i)\n" +
@@ -217,6 +217,20 @@ public class CosineTest {
     }
 
     @Test
+    public void cosineStreamSourceTargetIdsTest() {
+        Map<String, Object> config = map(
+                "concurrency", 1,
+                "sourceIds", Collections.singletonList(0L),
+                "targetIds", Collections.singletonList(1L)
+        );
+        Result results = db.execute(STATEMENT_STREAM, map("config", config, "missingValue", 0));
+
+        assertTrue(results.hasNext());
+        assert01(results.next());
+        assertFalse(results.hasNext());
+    }
+
+    @Test
     public void cosineSkipStreamTest() {
         Result results = db.execute(STATEMENT_STREAM,
                 map("config",map("concurrency",1, "skipValue", Double.NaN), "missingValue", Double.NaN));
@@ -253,6 +267,22 @@ public class CosineTest {
         assert01(flip(results.next()));
         assert02(flip(results.next()));
         assert03(flip(results.next()));
+        assertFalse(results.hasNext());
+    }
+
+    @Test
+    public void topKCosineSourceTargetIdStreamTest() {
+        Map<String, Object> config = map(
+                "concurrency", 1,
+                "topK", 1,
+                "sourceIds", Collections.singletonList(0L)
+
+        );
+        Map<String, Object> params = map("config", config, "missingValue", 0);
+        System.out.println(db.execute(STATEMENT_STREAM, params).resultAsString());
+        Result results = db.execute(STATEMENT_STREAM, params);
+        assertTrue(results.hasNext());
+        assert02(results.next());
         assertFalse(results.hasNext());
     }
 
@@ -333,10 +363,33 @@ public class CosineTest {
     }
 
     @Test
+    public void dontComputeComputationsByDefault() {
+        Map<String, Object> params = map("config", map(
+                "write", true,
+                "similarityCutoff", 0.1));
+
+        Result writeResult = db.execute(STATEMENT, params);
+        Map<String, Object> writeRow = writeResult.next();
+        assertEquals(-1L, (long) writeRow.get("computations"));
+    }
+
+    @Test
+    public void numberOfComputations() {
+        Map<String, Object> params = map("config", map(
+                "write", true,
+                "showComputations", true,
+                "similarityCutoff", 0.1));
+
+        Result writeResult = db.execute(STATEMENT, params);
+        Map<String, Object> writeRow = writeResult.next();
+        assertEquals(6L, (long) writeRow.get("computations"));
+    }
+
+    @Test
     public void simpleCosineWriteTest() {
         Map<String, Object> params = map("config", map( "write",true, "similarityCutoff", 0.1));
 
-        db.execute(STATEMENT,params).close();
+        db.execute(STATEMENT, params).close();
 
         String checkSimilaritiesQuery = "MATCH (a)-[similar:SIMILAR]-(b)" +
                 "RETURN a.name AS node1, b.name as node2, similar.score AS score " +

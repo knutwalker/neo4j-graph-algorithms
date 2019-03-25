@@ -38,6 +38,8 @@ These algorithms determine the importance of distinct nodes in a network:
 * <<algorithms-betweenness-centrality, Betweenness Centrality>> (`algo.betweenness`)
 * <<algorithms-closeness-centrality, Closeness Centrality>> (`algo.closeness`)
 * <<algorithms-harmonic-centrality, Harmonic Centrality>> (`algo.closeness.harmonic`)
+* <<algorithms-eigenvector, Eigenvector Centrality>> (`algo.eigenvector`)
+* <<algorithms-degree-centrality, Degree Centrality>> (`algo.degree`)
 
 
 === Community detection
@@ -49,6 +51,7 @@ These algorithms evaluate how a group is clustered or partitioned, as well as it
 * <<algorithms-connected-components, Connected Components>> (`algo.unionFind`)
 * <<algorithms-strongly-connected-components, Strongly Connected Components>> (`algo.scc`)
 * <<algorithms-triangle-count-clustering-coefficient, Triangle Counting / Clustering Coefficient>> (`algo.triangleCount`)
+* <<algorithms-balanced-triads, Balanced Triads>> (`algo.balancedTriads`)
 
 
 === Path finding
@@ -79,7 +82,10 @@ These algorithms can be used as part of Link Prediction solution:
 
 * <<algorithms-linkprediction-adamic-adar, Adamic Adar>> (`algo.linkprediction.adamicAdar`)
 * <<algorithms-linkprediction-common-neighbors, Common Neighbors>> (`algo.linkprediction.commonNeighbors`)
-* <<algorithms-linkprediction-adamic-adar, Resource Allocation>> (`algo.linkprediction.resourceAllocation`)
+* <<algorithms-linkprediction-preferential-attachment, Preferential Attachment>> (`algo.linkprediction.preferentialAttachment`)
+* <<algorithms-linkprediction-resource-allocation, Resource Allocation>> (`algo.linkprediction.resourceAllocation`)
+* <<algorithms-linkprediction-same-community, Same Community>> (`algo.linkprediction.sameCommunity`)
+* <<algorithms-linkprediction-total-neighbors, Total Neighbors>> (`algo.linkprediction.totalNeighbors`)
 
 === Preprocessing
 
@@ -253,6 +259,15 @@ CALL algo.<name>(
   "MATCH (n)-->(m) RETURN id(n) AS source, id(m) AS target",
   {graph: "cypher"})
 ----
+
+* The first query `MATCH (n) RETURN id(n) AS id` returns node ids.
+The Cypher loader expects the query to return an `id` field.
+
+* The second query `MATCH (n)-->(m) RETURN id(n) AS source, id(m) AS target` returns pairs of node ids that have a relationship between them in our projected graph.
+The Cypher loader expects the query to return `source` and `target` fields.
+We can also return an optional `weight` field.
+
+Note that in both queries we use the `id` function to return the node id.
 
 // end::cypher-projection[]
 

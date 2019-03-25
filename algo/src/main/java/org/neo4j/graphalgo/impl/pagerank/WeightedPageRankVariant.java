@@ -34,7 +34,7 @@ public class WeightedPageRankVariant implements PageRankVariant {
                                          WeightedRelationshipIterator weightedRelationshipIterator,
                                          Degrees degrees,
                                          int partitionCount, int start,
-                                         DegreeCache degreeCache) {
+                                         DegreeCache degreeCache, long nodeCount) {
         if(cacheWeights ){
             return new WeightedWithCachedWeightsComputeStep(
                     dampingFactor,
@@ -62,7 +62,7 @@ public class WeightedPageRankVariant implements PageRankVariant {
     public HugeComputeStep createHugeComputeStep(double dampingFactor, long[] sourceNodeIds,
                                                  HugeRelationshipIterator relationshipIterator, HugeDegrees degrees,
                                                  HugeRelationshipWeights relationshipWeights, AllocationTracker tracker,
-                                                 int partitionCount, long start, DegreeCache aggregatedDegrees) {
+                                                 int partitionCount, long start, DegreeCache aggregatedDegrees, long nodeCount) {
         return new HugeWeightedComputeStep(
                 dampingFactor,
                 sourceNodeIds,

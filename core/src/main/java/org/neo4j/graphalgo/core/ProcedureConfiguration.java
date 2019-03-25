@@ -387,6 +387,17 @@ public class ProcedureConfiguration {
         return (V) value;
     }
 
+    public <V> V get(String newKey, String oldKey, V defaultValue) {
+        Object value = config.get(newKey);
+        if (null == value) {
+            value = config.get(oldKey);
+            if(null == value) {
+                return defaultValue;
+            }
+        }
+        return (V) value;
+    }
+
     public static ProcedureConfiguration create(Map<String, Object> config) {
         return new ProcedureConfiguration(config);
     }
@@ -410,4 +421,11 @@ public class ProcedureConfiguration {
     public Map<String, Object> getParams() {
         return (Map<String, Object>) config.getOrDefault("params", Collections.emptyMap());
     }
+
+    public DuplicateRelationshipsStrategy getDuplicateRelationshipsStrategy() {
+        String strategy = get("duplicateRelationships", null);
+        return strategy != null ? DuplicateRelationshipsStrategy.valueOf(strategy.toUpperCase()) : DuplicateRelationshipsStrategy.NONE;
+    }
+
+
 }

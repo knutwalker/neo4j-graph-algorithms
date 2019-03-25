@@ -10,7 +10,23 @@ This section describes the PageRank algorithm in the Neo4j Graph Algorithms libr
 PageRank is an algorithm that measures the *transitive* influence or connectivity of nodes.
 
 It can be computed by either iteratively distributing one node's rank (originally based on degree) over its neighbours or by randomly traversing the graph and counting the frequency of hitting each node during these walks.
+
+PageRank is a variant of <<algorithms-eigenvector, Eigenvector Centrality>>.
 // end::introduction[]
+
+This section includes:
+
+* <<algorithms-pagerank-context, History and explanation>>
+* <<algorithms-pagerank-usecase, Use-cases - when to use the PageRank algorithm>>
+* <<algorithms-pagerank-limitations, Constraints - when not to use the PageRank algorithm>>
+* <<algorithms-pagerank-sample, PageRank algorithm sample>>
+* <<algorithms-pagerank-weighted-sample, Weighted PageRank algorithm sample>>
+** <<algorithms-pagerank-personalized, Personalized PageRank>>
+* <<algorithms-pagerank-example, Example usage>>
+* <<algorithms-pagerank-hgp, Huge graph projection>>
+* <<algorithms-pagerank-cp, Cypher projection>>
+* <<algorithms-pagerank-syntax, Syntax>>
+* <<algorithms-pagerank-support, Graph type support>>
 
 
 [[algorithms-pagerank-context]]
@@ -77,6 +93,7 @@ If you see unexpected results from running the algorithm, it is worth doing some
 You can read http://www.cs.princeton.edu/~chazelle/courses/BIB/pagerank.htm[The Google PageRank Algorithm and How It Works^] to learn more.
 // end::constraint[]
 
+
 [[algorithms-pagerank-sample]]
 == PageRank algorithm sample
 
@@ -122,6 +139,7 @@ include::scripts/pagerank.cypher[tag=write-sample-graph]
 As we might expect, the Home page has the highest PageRank because it has incoming links from all other pages.
 We can also see that it's not only the number of incoming links that is important, but also the importance of the pages behind those links.
 // end::stream-sample-graph-explanation[]
+
 
 [[algorithms-pagerank-weighted-sample]]
 == Weighted PageRank algorithm sample
@@ -171,6 +189,7 @@ The Product page has now become the 2nd most important page in its own right bec
 // end::stream-sample-weighted-graph-explanation[]
 
 
+[[algorithms-pagerank-personalized]]
 === Personalized PageRank
 
 Personalized PageRank is a variation of PageRank which is biased towards a set of `sourceNodes`.
@@ -207,7 +226,6 @@ include::scripts/pagerank.cypher[tag=ppr-write-sample-graph]
 // end::ppr-stream-graph-result[]
 
 
-
 [[algorithms-pagerank-example]]
 == Example usage
 
@@ -228,6 +246,32 @@ include::scripts/pagerank.cypher[tag=pagerank-stream-yelp-social]
 ----
 
 
+[[algorithms-pagerank-hgp]]
+== Huge graph projection
+
+include::huge-projection.adoc[tag=explanation]
+
+.Set `graph:'huge'` in the config:
+
+[source, cypher]
+----
+include::scripts/pagerank.cypher[tag=huge-projection]
+----
+
+
+[[algorithms-pagerank-cp]]
+== Cypher projection
+
+include::cypher-projection.adoc[tag=explanation]
+
+.Set `graph:'cypher'` in the config:
+
+[source, cypher]
+----
+include::scripts/pagerank.cypher[tag=cypher-loading]
+----
+
+
 [[algorithms-pagerank-syntax]]
 == Syntax
 
@@ -235,7 +279,7 @@ include::scripts/pagerank.cypher[tag=pagerank-stream-yelp-social]
 [source, cypher]
 ----
 CALL algo.pageRank(label:String, relationship:String,
-    {iterations:20, dampingFactor:0.85, write: true, writeProperty:'pagerank', concurrency:4})
+    {direction:'OUTGOING', iterations:20, dampingFactor:0.85, write: true, writeProperty:'pagerank', concurrency:4})
 YIELD nodes, iterations, loadMillis, computeMillis, writeMillis, dampingFactor, write, writeProperty
 ----
 
@@ -245,6 +289,7 @@ YIELD nodes, iterations, loadMillis, computeMillis, writeMillis, dampingFactor, 
 | Name          | Type    | Default        | Optional | Description
 | label         | string  | null           | yes      | The label to load from the graph. If null, load all nodes
 | relationship  | string  | null           | yes      | The relationship-type to load from the graph. If null, load all relationships
+| direction     | string  | 'OUTGOING'     | yes      | The relationship-direction to use in the algorithm
 | iterations    | int     | 20             | yes      | How many iterations of PageRank to run
 | concurrency   | int     | available CPUs | yes      | The number of concurrent threads
 | dampingFactor | float   | 0.85           | yes      | The damping factor of the PageRank calculation
@@ -272,7 +317,7 @@ YIELD nodes, iterations, loadMillis, computeMillis, writeMillis, dampingFactor, 
 [source, cypher]
 ----
 CALL algo.pageRank.stream(label:String, relationship:String,
-    {iterations:20, dampingFactor:0.85, concurrency:4})
+    {direction:'OUTGOING', iterations:20, dampingFactor:0.85, concurrency:4})
 YIELD node, score
 ----
 
@@ -282,6 +327,7 @@ YIELD node, score
 | Name          | Type   | Default        | Optional | Description
 | label         | string | null           | yes      | The label to load from the graph. If null, load all nodes
 | relationship  | string | null           | yes      | The relationship-type to load from the graph. If null, load all nodes
+| direction     | string | 'OUTGOING'     | yes      | The relationship-direction to use in the algorithm
 | iterations    | int    | 20             | yes      | Specify how many iterations of PageRank to run
 | concurrency   | int    | available CPUs | yes      | The number of concurrent threads
 | dampingFactor | float  | 0.85           | yes      | The damping factor of the PageRank calculation
@@ -299,44 +345,19 @@ YIELD node, score
 |===
 
 
-== Huge graph projection
-
-If our projected graph contains more than 2 billion nodes or relationships, we need to use huge graph projection, as the default label and relationship-type projection has a limitation of 2 billion nodes and 2 billion relationships.
-
-.Set `graph:'huge'` in the config:
-
-[source, cypher]
-----
-include::scripts/pagerank.cypher[tag=huge-projection]
-----
-
-
-== Cypher projection
-
-If label and relationship-type are not selective enough to describe a subgraph to run the algorithm on, you can use Cypher statements to load or project subsets of your graph.
-You must ensure that `graph:'cypher'` is set in the config:
-
-[source, cypher]
-----
-include::scripts/pagerank.cypher[tag=cypher-loading]
-----
-
-
+[[algorithms-pagerank-support]]
 == Graph type support
 
 The PageRank algorithm supports the following graph types:
 
-* [x] directed, unweighted
-
+* [x] directed, unweighted:
+** direction: 'INCOMING' or 'OUTGOING', weightProperty: null
 * [x] directed, weighted
-
+** direction: 'INCOMING' or 'OUTGOING', weightProperty : 'weight'
 * [x] undirected, unweighted
-
-** Only with cypher projection
-
+** direction: 'BOTH', weightProperty: null
 * [x] undirected, weighted
-
-** Only with cypher projection
+** direction: 'BOTH', weightProperty: 'weight'
 
 ifndef::env-docs[]
 == References
