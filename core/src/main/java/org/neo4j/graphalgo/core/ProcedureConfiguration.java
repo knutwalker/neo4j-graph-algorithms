@@ -32,6 +32,7 @@ import org.neo4j.graphalgo.core.utils.Directions;
 import org.neo4j.graphalgo.core.utils.ParallelUtil;
 import org.neo4j.graphalgo.core.utils.Pools;
 import org.neo4j.graphdb.Direction;
+import org.neo4j.graphdb.RelationshipType;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -276,6 +277,10 @@ public class ProcedureConfiguration {
         return Directions.fromString(getDirectionName(defaultDirection.name()));
     }
 
+    public RelationshipType getRelationship() {
+        return getRelationshipOrQuery() == null ? null : RelationshipType.withName(getRelationshipOrQuery());
+    }
+
     public String getGraphName(String defaultValue) {
         return getString(ProcedureConstants.GRAPH_IMPL_PARAM, defaultValue);
     }
@@ -382,6 +387,17 @@ public class ProcedureConfiguration {
         return (V) value;
     }
 
+    public <V> V get(String newKey, String oldKey, V defaultValue) {
+        Object value = config.get(newKey);
+        if (null == value) {
+            value = config.get(oldKey);
+            if(null == value) {
+                return defaultValue;
+            }
+        }
+        return (V) value;
+    }
+
     public static ProcedureConfiguration create(Map<String, Object> config) {
         return new ProcedureConfiguration(config);
     }
@@ -405,4 +421,11 @@ public class ProcedureConfiguration {
     public Map<String, Object> getParams() {
         return (Map<String, Object>) config.getOrDefault("params", Collections.emptyMap());
     }
+
+    public DuplicateRelationshipsStrategy getDuplicateRelationshipsStrategy() {
+        String strategy = get("duplicateRelationships", null);
+        return strategy != null ? DuplicateRelationshipsStrategy.valueOf(strategy.toUpperCase()) : DuplicateRelationshipsStrategy.NONE;
+    }
+
+
 }

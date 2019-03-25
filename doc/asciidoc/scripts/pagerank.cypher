@@ -31,9 +31,7 @@ MERGE (d)-[:LINKS]->(home)
 CALL algo.pageRank.stream('Page', 'LINKS', {iterations:20, dampingFactor:0.85})
 YIELD nodeId, score
 
-MATCH (node) WHERE id(node) = nodeId
-
-RETURN node.name AS page,score
+RETURN algo.getNodeById(nodeId).name AS page,score
 ORDER BY score DESC
 
 // end::stream-sample-graph[]
@@ -88,9 +86,7 @@ CALL algo.pageRank.stream('Page', 'LINKS', {
 })
 YIELD nodeId, score
 
-MATCH (node) WHERE id(node) = nodeId
-
-RETURN node.name AS page,score
+RETURN algo.getNodeById(nodeId).name AS page,score
 ORDER BY score DESC
 
 // end::stream-sample-weighted-graph[]
@@ -110,9 +106,7 @@ MATCH (siteA:Page {name: "Site A"})
 CALL algo.pageRank.stream('Page', 'LINKS', {iterations:20, dampingFactor:0.85, sourceNodes: [siteA]})
 YIELD nodeId, score
 
-MATCH (node) WHERE id(node) = nodeId
-
-RETURN node.name AS page,score
+RETURN algo.getNodeById(nodeId).name AS page,score
 ORDER BY score DESC
 
 // end::ppr-stream-sample-graph[]
@@ -130,7 +124,7 @@ RETURN *
 
 CALL algo.pageRank(
   'MATCH (p:Page) RETURN id(p) as id',
-  'MATCH (p1:Page)-[:Link]->(p2:Page) RETURN id(p1) as source, id(p2) as target',
+  'MATCH (p1:Page)-[:LINKS]->(p2:Page) RETURN id(p1) as source, id(p2) as target',
   {graph:'cypher', iterations:5, write: true}
 )
 
@@ -142,7 +136,7 @@ CALL algo.pageRank.stream(
   'MATCH (u:User) WHERE exists( (u)-[:FRIENDS]-() ) RETURN id(u) as id',
   'MATCH (u1:User)-[:FRIENDS]-(u2:User) RETURN id(u1) as source, id(u2) as target',
   {graph:'cypher'}
-) YIELD node,score with node,score order by score desc limit 10
+) YIELD nodeId,score with algo.getNodeById(nodeId) as node, score order by score desc limit 10
 RETURN node {.name, .review_count, .average_stars,.useful,.yelping_since,.funny}, score
 
 // end::pagerank-stream-yelp-social[]

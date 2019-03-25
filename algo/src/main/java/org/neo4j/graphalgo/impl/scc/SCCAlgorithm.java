@@ -29,28 +29,64 @@ import org.neo4j.graphalgo.results.SCCResult;
 import java.util.stream.Stream;
 
 /**
+ * unified iface for all scc algorithms regardless of which graph
+ * and impl is used.
+ *
  * @author mknblch
  */
 public interface SCCAlgorithm {
 
+    /**
+     * compute scc's
+     * @return
+     */
     SCCAlgorithm compute();
 
+    /**
+     * get number of components
+     * @return
+     */
     long getSetCount();
 
+    /**
+     * get minimum set size of all components
+     * @return
+     */
     long getMinSetSize();
 
+    /**
+     * get maximum set size of all components
+     * @return
+     */
     long getMaxSetSize();
 
+    /**
+     * return stream of original nodeId to component id mapping
+     * @return
+     */
     Stream<SCCAlgorithm.StreamResult>  resultStream();
 
     SCCAlgorithm withProgressLogger(ProgressLogger wrap);
 
     SCCAlgorithm withTerminationFlag(TerminationFlag wrap);
 
+    /**
+     * release inner data structures
+     * @return
+     */
     SCCAlgorithm release();
 
+    /**
+     * get nodeId to component id mapping
+     * either as int[] or hugeLong array
+     * @param <V>
+     * @return
+     */
     <V> V getConnectedComponents();
 
+    /**
+     * stream result type
+     */
     class StreamResult {
 
         public final long nodeId;
@@ -62,67 +98,14 @@ public interface SCCAlgorithm {
         }
     }
 
-    class Result {
-
-        public final Long loadMillis;
-        public final Long computeMillis;
-        public final Long writeMillis;
-        public final Long setCount;
-        public final Long minSetSize;
-        public final Long maxSetSize;
-
-        public Result(Long loadMillis,
-                         Long computeMillis,
-                         Long writeMillis,
-                         Long setCount,
-                         Long minSetSize,
-                         Long maxSetSize) {
-            this.loadMillis = loadMillis;
-            this.computeMillis = computeMillis;
-            this.writeMillis = writeMillis;
-            this.setCount = setCount;
-            this.minSetSize = minSetSize;
-            this.maxSetSize = maxSetSize;
-        }
-
-        public static Result.Builder builder() {
-            return new Result.Builder();
-        }
-
-        public static final class Builder extends AbstractResultBuilder<Result> {
-
-            private long setCount;
-            private long minSetSize;
-            private long maxSetSize;
-
-            public Result.Builder withSetCount(long setCount) {
-                this.setCount = setCount;
-                return this;
-            }
-
-            public Result.Builder withMinSetSize(long minSetSize) {
-                this.minSetSize = minSetSize;
-                return this;
-            }
-
-            public Result.Builder withMaxSetSize(long maxSetSize) {
-                this.maxSetSize = maxSetSize;
-                return this;
-            }
-
-            @Override
-            public Result build() {
-                return new Result(loadDuration,
-                        evalDuration,
-                        writeDuration,
-                        setCount,
-                        minSetSize,
-                        maxSetSize);
-            }
-        }
-
-    }
-
+    /**
+     * returns a initialized SCC algorithm based on which
+     * type of graph (huge, heavy) has been supplied.
+     *
+     * @param graph
+     * @param tracker
+     * @return
+     */
     static SCCAlgorithm iterativeTarjan(Graph graph, AllocationTracker tracker) {
         if (graph instanceof HugeGraph) {
             return new HugeSCCIterativeTarjan((HugeGraph) graph, tracker);

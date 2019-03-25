@@ -30,6 +30,7 @@ import org.neo4j.graphalgo.core.GraphLoader;
 import org.neo4j.graphalgo.core.heavyweight.HeavyGraphFactory;
 import org.neo4j.graphalgo.core.huge.loader.HugeGraphFactory;
 import org.neo4j.graphalgo.core.utils.Pools;
+import org.neo4j.graphalgo.core.utils.TerminationFlag;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphalgo.impl.louvain.Louvain;
 import org.neo4j.graphdb.Label;
@@ -124,6 +125,7 @@ public class LouvainMultiLevelTest {
         setup(COMPLEX_CYPHER);
         final Louvain algorithm = new Louvain(graph, Pools.DEFAULT, 1, AllocationTracker.EMPTY)
                 .withProgressLogger(TestProgressLogger.INSTANCE)
+                .withTerminationFlag(TerminationFlag.RUNNING_TRUE)
                 .compute(10, 10);
         final int[][] dendogram = algorithm.getDendrogram();
         for (int i = 1; i <= dendogram.length; i++) {
@@ -135,5 +137,24 @@ public class LouvainMultiLevelTest {
 
         assertArrayEquals(new int[]{0, 0, 0, 1, 1, 1, 2, 2, 2}, dendogram[0]);
         assertArrayEquals(new int[]{0, 0, 0, 1, 1, 1, 2, 2, 2}, algorithm.getCommunityIds());
+        assertEquals(0.53, algorithm.getFinalModularity(), 0.01);
+        assertArrayEquals(new double[]{0.53}, algorithm.getModularities(), 0.01);
+    }
+
+    @Test
+    public void testComplexRNL() throws Exception {
+        setup(COMPLEX_CYPHER);
+        final Louvain algorithm = new Louvain(graph, Pools.DEFAULT, 1, AllocationTracker.EMPTY)
+                .withProgressLogger(TestProgressLogger.INSTANCE)
+                .withTerminationFlag(TerminationFlag.RUNNING_TRUE)
+                .compute(10, 10, true);
+        final int[][] dendogram = algorithm.getDendrogram();
+        for (int i = 1; i <= dendogram.length; i++) {
+            if (null == dendogram[i - 1]) {
+                break;
+            }
+            System.out.println("level " + i + ": " + Arrays.toString(dendogram[i - 1]));
+        }
+
     }
 }

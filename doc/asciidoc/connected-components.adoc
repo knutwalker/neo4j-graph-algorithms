@@ -12,6 +12,19 @@ It differs from the Strongly Connected Components algorithm (SCC) because it onl
 As with SCC, `UnionFind` is often used early in an analysis to understand a graph's structure.
 // end::introduction[]
 
+This section includes:
+
+* <<algorithms-connected-components-context, History and explanation>>
+* <<algorithms-connected-components-usecase, Use-cases - when to use the Connected Components algorithm>>
+* <<algorithms-connected-components-sample, Connected Components algorithm sample>>
+** <<algorithms-connected-components-sample-unweighted, Unweighted version>>
+** <<algorithms-connected-components-sample-weighted, Weighted version>>
+* <<algorithms-connected-components-example, Example usage>>
+* <<algorithms-connected-components-hgp, Huge graph projection>>
+* <<algorithms-connected-components-cp, Cypher projection>>
+* <<algorithms-connected-components-syntax, Syntax>>
+* <<algorithms-connected-components-imp, Implementations>>
+
 
 [[algorithms-connected-components-context]]
 == History and explanation
@@ -56,6 +69,7 @@ include::scripts/connected-components.cypher[tag=create-sample-graph]
 ----
 
 
+[[algorithms-connected-components-sample-unweighted]]
 === Unweighted version
 
 .The following will run the algorithm and stream results:
@@ -96,6 +110,7 @@ include::scripts/connected-components.cypher[tag=check-results-sample-graph]
 ----
 
 
+[[algorithms-connected-components-sample-weighted]]
 === Weighted version
 
 If you define the property that holds the weight (`weightProperty`) and the threshold, it means the nodes are only connected, if the threshold on the weight of the relationship is high enough, otherwise the relationship is thrown away.
@@ -161,6 +176,32 @@ We can now move on to next step of analysis and run centralities on only the big
 We will write back the results to the node, and use centralities with Cypher loading, or set a new label for the biggest component.
 
 
+[[algorithms-connected-components-hgp]]
+== Huge graph projection
+
+include::huge-projection.adoc[tag=explanation]
+
+.Set `graph:'huge'` in the config:
+
+[source, cypher]
+----
+include::scripts/connected-components.cypher[tag=huge-projection]
+----
+
+
+[[algorithms-connected-components-cp]]
+== Cypher projection
+
+include::cypher-projection.adoc[tag=explanation]
+
+.Set `graph:'cypher'` in the config:
+
+[source, cypher]
+----
+include::scripts/connected-components.cypher[tag=cypher-loading]
+----
+
+
 [[algorithms-connected-components-syntax]]
 == Syntax
 
@@ -168,7 +209,7 @@ We will write back the results to the node, and use centralities with Cypher loa
 [source, cypher]
 ----
 CALL algo.unionFind(label:String, relationship:String, {threshold:0.42,
-    defaultValue:1.0, write: true, partitionProperty:'partition', weightProperty:'weight', graph:'heavy', concurrency:4})
+    defaultValue:1.0, write: true, writeProperty:'partition', weightProperty:'weight', graph:'heavy', concurrency:4})
 YIELD nodes, setCount, loadMillis, computeMillis, writeMillis
 ----
 
@@ -180,7 +221,7 @@ YIELD nodes, setCount, loadMillis, computeMillis, writeMillis
 | relationship      | string  | null           | yes      | The relationship-type to load from the graph. If null, load all relationships
 | weightProperty    | string  | null           | yes      | The property name that contains weight. If null, treats the graph as unweighted. Must be numeric.
 | write             | boolean | true           | yes      | Specifies if the result should be written back as a node property
-| partitionProperty | string  | 'partition'    | yes      | The property name written back the ID of the partition particular node belongs to
+| writeProperty | string  | 'partition'    | yes      | The property name written back the ID of the partition particular node belongs to
 | threshold         | float   | null           | yes      | The value of the weight above which the relationship is not thrown away
 | defaultValue      | float   | null           | yes      | The default value of the weight in case it is missing or invalid
 | concurrency       | int     | available CPUs | yes      | The number of concurrent threads
@@ -191,11 +232,27 @@ YIELD nodes, setCount, loadMillis, computeMillis, writeMillis
 [opts="header",cols="1,1,6"]
 |===
 | Name          | Type | Description
-| nodes         | int  | The number of nodes considered
-| setCount      | int  | The number of partitions found
 | loadMillis    | int  | Milliseconds for loading data
 | computeMillis | int  | Milliseconds for running the algorithm
 | writeMillis   | int  | Milliseconds for writing result data back
+| postProcessingMillis    | int  | Milliseconds for computing percentiles and community count
+
+| nodes | int | The number of nodes considered
+| communityCount | int  | The number of communities found
+
+| p1                   | double  | The 1 percentile of community size.
+| p5                   | double  | The 5 percentile of community size.
+| p10                   | double  | The 10 percentile of community size.
+| p25                   | double  | The 25 percentile of community size.
+| p50                   | double  | The 50 percentile of community size.
+| p75                   | double  | The 75 percentile of community size.
+| p90                   | double  | The 90 percentile of community size.
+| p95                   | double  | The 95 percentile of community size.
+| p99                   | double  | The 99 percentile of community size.
+| p100                  | double  | The 100 percentile of community size.
+
+| write | boolean | Specifies if the result was written back as a node property
+| writeProperty | string | The property name written back to
 |===
 
 
@@ -229,31 +286,7 @@ YIELD nodeId, setId - yields a setId to each node id
 |===
 
 
-== Huge graph projection
-
-If our projected graph contains more than 2 billion nodes or relationships, we need to use huge graph projection, as the default label and relationship-type projection has a limitation of 2 billion nodes and 2 billion relationships.
-
-.Set `graph:'huge'` in the config:
-
-[source, cypher]
-----
-include::scripts/connected-components.cypher[tag=huge-projection]
-----
-
-
-== Cypher projection
-
-If label and relationship-type are not selective enough to describe your subgraph to run the algorithm on, you can use Cypher statements to load or project subsets of your graph.
-This can also be used to run algorithms on a virtual graph.
-
-.Set `graph:'cypher'` in the config:
-
-[source, cypher]
-----
-include::scripts/connected-components.cypher[tag=cypher-loading]
-----
-
-
+[[algorithms-connected-components-imp]]
 == Implementations
 
 `algo.unionFind`

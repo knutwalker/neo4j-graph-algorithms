@@ -1,3 +1,21 @@
+/**
+ * Copyright (c) 2017 "Neo4j, Inc." <http://neo4j.com>
+ *
+ * This file is part of Neo4j Graph Algorithms <http://github.com/neo4j-contrib/neo4j-graph-algorithms>.
+ *
+ * Neo4j Graph Algorithms is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 package org.neo4j.graphalgo.impl.pagerank;
 
 import org.neo4j.graphalgo.api.HugeDegrees;
@@ -17,6 +35,7 @@ public abstract class HugeBaseComputeStep implements HugeComputeStep {
     private static final int S_INIT = 0;
     private static final int S_CALC = 1;
     private static final int S_SYNC = 2;
+    private static final int S_NORM = 3;
 
     private int state;
 
@@ -38,6 +57,7 @@ public abstract class HugeBaseComputeStep implements HugeComputeStep {
     final long startNode;
     final long endNode;
     private final int partitionSize;
+    double l2Norm;
 
     HugeBaseComputeStep(
             double dampingFactor,
@@ -71,12 +91,17 @@ public abstract class HugeBaseComputeStep implements HugeComputeStep {
             state = S_SYNC;
         } else if (state == S_SYNC) {
             combineScores();
+            state = S_NORM;
+        } else if(state == S_NORM) {
+            normalizeDeltas();
             state = S_CALC;
         } else if (state == S_INIT) {
             initialize();
             state = S_CALC;
         }
     }
+
+    void normalizeDeltas() {}
 
     private void initialize() {
         this.nextScores = new int[starts.length][];
@@ -89,17 +114,18 @@ public abstract class HugeBaseComputeStep implements HugeComputeStep {
         tracker.add(sizeOfDoubleArray(partitionSize) << 1);
 
         double[] partitionRank = new double[partitionSize];
+        double initialValue = initialValue();
         if(sourceNodeIds.length == 0) {
-            Arrays.fill(partitionRank, alpha);
+            Arrays.fill(partitionRank, initialValue);
         } else {
             Arrays.fill(partitionRank,0);
 
             long[] partitionSourceNodeIds = LongStream.of(sourceNodeIds)
-                    .filter(sourceNodeId -> sourceNodeId >= startNode && sourceNodeId <= endNode)
+                    .filter(sourceNodeId -> sourceNodeId >= startNode && sourceNodeId < endNode)
                     .toArray();
 
             for (long sourceNodeId : partitionSourceNodeIds) {
-                partitionRank[Math.toIntExact(sourceNodeId - this.startNode)] = alpha;
+                partitionRank[Math.toIntExact(sourceNodeId - this.startNode)] = initialValue;
             }
         }
 
@@ -107,7 +133,16 @@ public abstract class HugeBaseComputeStep implements HugeComputeStep {
         this.deltas = Arrays.copyOf(partitionRank, partitionSize);
     }
 
+    double initialValue() {
+        return alpha;
+    }
+
     abstract void singleIteration();
+
+    @Override
+    public void prepareNormalizeDeltas(double l2Norm) {
+        this.l2Norm = l2Norm;
+    }
 
     public void prepareNextIteration(int[][] prevScores) {
         this.prevScores = prevScores;
@@ -145,4 +180,6 @@ public abstract class HugeBaseComputeStep implements HugeComputeStep {
     public long[] starts() {
         return starts;
     }
+
+    public double[] deltas() { return deltas;}
 }

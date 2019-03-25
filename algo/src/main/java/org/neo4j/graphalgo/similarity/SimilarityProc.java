@@ -1,28 +1,48 @@
+/**
+ * Copyright (c) 2017 "Neo4j, Inc." <http://neo4j.com>
+ *
+ * This file is part of Neo4j Graph Algorithms <http://github.com/neo4j-contrib/neo4j-graph-algorithms>.
+ *
+ * Neo4j Graph Algorithms is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 package org.neo4j.graphalgo.similarity;
 
+import com.carrotsearch.hppc.LongDoubleHashMap;
+import com.carrotsearch.hppc.LongDoubleMap;
+import com.carrotsearch.hppc.LongHashSet;
+import com.carrotsearch.hppc.LongSet;
 import org.HdrHistogram.DoubleHistogram;
 import org.neo4j.graphalgo.core.ProcedureConfiguration;
-import org.neo4j.graphalgo.core.utils.ParallelUtil;
-import org.neo4j.graphalgo.core.utils.Pools;
-import org.neo4j.graphalgo.core.utils.QueueBasedSpliterator;
+import org.neo4j.graphalgo.core.ProcedureConstants;
 import org.neo4j.graphalgo.core.utils.TerminationFlag;
-import org.neo4j.graphalgo.impl.util.TopKConsumer;
-import org.neo4j.graphalgo.impl.yens.SimilarityExporter;
+import org.neo4j.graphalgo.similarity.recorder.NonRecordingSimilarityRecorder;
+import org.neo4j.graphalgo.similarity.recorder.RecordingSimilarityRecorder;
+import org.neo4j.graphalgo.similarity.recorder.SimilarityRecorder;
+import org.neo4j.graphdb.Result;
 import org.neo4j.kernel.api.KernelTransaction;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 import org.neo4j.logging.Log;
-import org.neo4j.procedure.*;
+import org.neo4j.procedure.Context;
 
 import java.util.*;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
-import java.util.stream.IntStream;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
-import static org.neo4j.graphalgo.impl.util.TopKConsumer.topK;
+import static org.neo4j.graphalgo.similarity.TopKConsumer.topK;
+import static org.neo4j.graphalgo.similarity.Weights.REPEAT_CUTOFF;
 
 public class SimilarityProc {
     @Context
@@ -32,7 +52,7 @@ public class SimilarityProc {
     @Context
     public KernelTransaction transaction;
 
-    private static TopKConsumer<SimilarityResult>[] initializeTopKConsumers(int length, int topK) {
+    static TopKConsumer<SimilarityResult>[] initializeTopKConsumers(int length, int topK) {
         Comparator<SimilarityResult> comparator = topK > 0 ? SimilarityResult.DESCENDING : SimilarityResult.ASCENDING;
         topK = Math.abs(topK);
 
@@ -54,22 +74,25 @@ public class SimilarityProc {
         return topK(stream, topN, comparator);
     }
 
-    private static <T> void put(BlockingQueue<T> queue, T items) {
-        try {
-            queue.put(items);
-        } catch (InterruptedException e) {
-            // ignore
-        }
+    static SimilarityRecorder<WeightedInput> similarityRecorder(SimilarityComputer<WeightedInput> computer, ProcedureConfiguration configuration) {
+        boolean showComputations = configuration.get("showComputations", false);
+        return showComputations ? new RecordingSimilarityRecorder<>(computer) : new NonRecordingSimilarityRecorder<>(computer);
+    }
+
+    static SimilarityRecorder<CategoricalInput> categoricalSimilarityRecorder(SimilarityComputer<CategoricalInput> computer, ProcedureConfiguration configuration) {
+        boolean showComputations = configuration.get("showComputations", false);
+        return showComputations ? new RecordingSimilarityRecorder<>(computer) : new NonRecordingSimilarityRecorder<>(computer);
     }
 
     Long getDegreeCutoff(ProcedureConfiguration configuration) {
         return configuration.get("degreeCutoff", 0L);
     }
 
-    Stream<SimilaritySummaryResult> writeAndAggregateResults(ProcedureConfiguration configuration, Stream<SimilarityResult> stream, int length, boolean write, String defaultWriteProperty) {
-        String writeRelationshipType = configuration.get("writeRelationshipType", defaultWriteProperty);
-        String writeProperty = configuration.getWriteProperty("score");
-
+    Long getWriteBatchSize(ProcedureConfiguration configuration) {
+        return configuration.get("writeBatchSize", 10000L);
+    }
+    Stream<SimilaritySummaryResult> writeAndAggregateResults(Stream<SimilarityResult> stream, int length, int sourceIdsLength, int targetIdsLength, ProcedureConfiguration configuration, boolean write, String writeRelationshipType, String writeProperty, Computations computations) {
+        long writeBatchSize = getWriteBatchSize(configuration);
         AtomicLong similarityPairs = new AtomicLong();
         DoubleHistogram histogram = new DoubleHistogram(5);
         Consumer<SimilarityResult> recorder = result -> {
@@ -79,111 +102,31 @@ public class SimilarityProc {
 
         if (write) {
             SimilarityExporter similarityExporter = new SimilarityExporter(api, writeRelationshipType, writeProperty);
-            similarityExporter.export(stream.peek(recorder));
+            similarityExporter.export(stream.peek(recorder), writeBatchSize);
         } else {
             stream.forEach(recorder);
         }
 
-        return Stream.of(SimilaritySummaryResult.from(length, similarityPairs, writeRelationshipType, writeProperty, write, histogram));
+        return Stream.of(SimilaritySummaryResult.from(length, sourceIdsLength, targetIdsLength, similarityPairs, computations.count(), writeRelationshipType, writeProperty, write, histogram));
+    }
+
+    Stream<SimilaritySummaryResult> emptyStream(String writeRelationshipType, String writeProperty) {
+        return Stream.of(SimilaritySummaryResult.from(0, 0,0, new AtomicLong(0), -1, writeRelationshipType,
+                writeProperty, false, new DoubleHistogram(5)));
     }
 
     Double getSimilarityCutoff(ProcedureConfiguration configuration) {
         return configuration.get("similarityCutoff", -1D);
     }
 
-    <T> Stream<SimilarityResult> similarityStream(T[] inputs, SimilarityComputer<T> computer, ProcedureConfiguration configuration, double cutoff, int topK) {
+    <T> Stream<SimilarityResult> similarityStream(T[] inputs, int[] sourceIndexIds, int[] targetIndexIds, SimilarityComputer<T> computer, ProcedureConfiguration configuration, Supplier<RleDecoder> decoderFactory, double cutoff, int topK) {
         TerminationFlag terminationFlag = TerminationFlag.wrap(transaction);
-        int concurrency = configuration.getConcurrency();
 
-        int length = inputs.length;
-        if (concurrency == 1) {
-            if (topK != 0) {
-                return similarityStreamTopK(inputs, length, cutoff, topK, computer);
-            } else {
-                return similarityStream(inputs, length, cutoff, computer);
-            }
+        SimilarityStreamGenerator<T> generator = new SimilarityStreamGenerator<>(terminationFlag, configuration, decoderFactory, computer);
+        if (sourceIndexIds.length == 0 && targetIndexIds.length == 0) {
+            return generator.stream(inputs, cutoff, topK);
         } else {
-            if (topK != 0) {
-                return similarityParallelStreamTopK(inputs, length, terminationFlag, concurrency, cutoff, topK, computer);
-            } else {
-                return similarityParallelStream(inputs, length, terminationFlag, concurrency, cutoff, computer);
-            }
-        }
-    }
-
-    private <T> Stream<SimilarityResult> similarityStream(T[] inputs, int length, double similiarityCutoff, SimilarityComputer<T> computer) {
-        return IntStream.range(0, length)
-                .boxed().flatMap(sourceId -> IntStream.range(sourceId + 1, length)
-                        .mapToObj(targetId -> computer.similarity(inputs[sourceId], inputs[targetId], similiarityCutoff)).filter(Objects::nonNull));
-    }
-
-    private <T> Stream<SimilarityResult> similarityStreamTopK(T[] inputs, int length, double cutoff, int topK, SimilarityComputer<T> computer) {
-        TopKConsumer<SimilarityResult>[] topKHolder = initializeTopKConsumers(length, topK);
-
-        SimilarityConsumer consumer = assignSimilarityPairs(topKHolder);
-        for (int sourceId = 0; sourceId < length; sourceId++) {
-            computeSimilarityForSourceIndex(sourceId, inputs, length, cutoff, consumer, computer);
-        }
-        return Arrays.stream(topKHolder).flatMap(TopKConsumer::stream);
-    }
-
-    private <T> Stream<SimilarityResult> similarityParallelStream(T[] inputs, int length, TerminationFlag terminationFlag, int concurrency, double cutoff, SimilarityComputer<T> computer) {
-
-        int timeout = 100;
-        int queueSize = 1000;
-
-        int batchSize = ParallelUtil.adjustBatchSize(length, concurrency, 1);
-        int taskCount = (length / batchSize) + (length % batchSize > 0 ? 1 : 0);
-        Collection<Runnable> tasks = new ArrayList<>(taskCount);
-
-        ArrayBlockingQueue<SimilarityResult> queue = new ArrayBlockingQueue<>(queueSize);
-
-        int multiplier = batchSize < length ? batchSize : 1;
-        for (int taskId = 0; taskId < taskCount; taskId++) {
-            int taskOffset = taskId;
-            tasks.add(() -> {
-                for (int offset = 0; offset < batchSize; offset++) {
-                    int sourceId = taskOffset * multiplier + offset;
-                    if (sourceId < length)
-                        computeSimilarityForSourceIndex(sourceId, inputs, length, cutoff, (s, t, result) -> put(queue, result), computer);
-                }
-            });
-        }
-
-        new Thread(() -> {
-            try {
-                ParallelUtil.runWithConcurrency(concurrency, tasks, terminationFlag, Pools.DEFAULT);
-            } finally {
-                put(queue, SimilarityResult.TOMB);
-            }
-        }).start();
-
-        QueueBasedSpliterator<SimilarityResult> spliterator = new QueueBasedSpliterator<>(queue, SimilarityResult.TOMB, terminationFlag, timeout);
-        return StreamSupport.stream(spliterator, false);
-    }
-
-    private <T> Stream<SimilarityResult> similarityParallelStreamTopK(T[] inputs, int length, TerminationFlag terminationFlag, int concurrency, double cutoff, int topK, SimilarityComputer<T> computer) {
-        int batchSize = ParallelUtil.adjustBatchSize(length, concurrency, 1);
-        int taskCount = (length / batchSize) + (length % batchSize > 0 ? 1 : 0);
-        Collection<TopKTask> tasks = new ArrayList<>(taskCount);
-
-        int multiplier = batchSize < length ? batchSize : 1;
-        for (int taskId = 0; taskId < taskCount; taskId++) {
-            tasks.add(new TopKTask(batchSize, taskId, multiplier, length, inputs, cutoff, topK, computer));
-        }
-        ParallelUtil.runWithConcurrency(concurrency, tasks, terminationFlag, Pools.DEFAULT);
-
-        TopKConsumer<SimilarityResult>[] topKConsumers = initializeTopKConsumers(length, topK);
-        for (Runnable task : tasks) ((TopKTask) task).mergeInto(topKConsumers);
-        return Arrays.stream(topKConsumers).flatMap(TopKConsumer::stream);
-    }
-
-    private <T> void computeSimilarityForSourceIndex(int sourceId, T[] inputs, int length, double cutoff, SimilarityConsumer consumer, SimilarityComputer<T> computer) {
-        for (int targetId = sourceId + 1; targetId < length; targetId++) {
-            SimilarityResult similarity = computer.similarity(inputs[sourceId], inputs[targetId], cutoff);
-            if (similarity != null) {
-                consumer.accept(sourceId, targetId, similarity);
-            }
+            return generator.stream(inputs, sourceIndexIds, targetIndexIds, cutoff, topK);
         }
     }
 
@@ -208,7 +151,20 @@ public class SimilarityProc {
         return ids;
     }
 
-    WeightedInput[] prepareWeights(List<Map<String, Object>> data, long degreeCutoff) {
+    WeightedInput[] prepareWeights(Object rawData, ProcedureConfiguration configuration, Double skipValue) throws Exception {
+        if (ProcedureConstants.CYPHER_QUERY.equals(configuration.getGraphName("dense"))) {
+            return prepareSparseWeights(api, (String) rawData,  skipValue, configuration);
+        } else {
+            List<Map<String, Object>> data = (List<Map<String, Object>>) rawData;
+            return preparseDenseWeights(data, getDegreeCutoff(configuration), skipValue);
+        }
+    }
+
+    Double readSkipValue(ProcedureConfiguration configuration) {
+        return configuration.get("skipValue", Double.NaN);
+    }
+
+    private WeightedInput[] preparseDenseWeights(List<Map<String, Object>> data, long degreeCutoff, Double skipValue) {
         WeightedInput[] inputs = new WeightedInput[data.size()];
         int idx = 0;
         for (Map<String, Object> row : data) {
@@ -217,14 +173,58 @@ public class SimilarityProc {
 
             int size = weightList.size();
             if (size > degreeCutoff) {
-                double[] weights = new double[size];
-                int i = 0;
-                for (Number value : weightList) {
-                    weights[i++] = value.doubleValue();
-                }
-                inputs[idx++] = new WeightedInput((Long) row.get("item"), weights);
+                double[] weights = Weights.buildWeights(weightList);
+                inputs[idx++] = skipValue == null ? WeightedInput.dense((Long) row.get("item"), weights) : WeightedInput.dense((Long) row.get("item"), weights, skipValue);
             }
         }
+        if (idx != inputs.length) inputs = Arrays.copyOf(inputs, idx);
+        Arrays.sort(inputs);
+        return inputs;
+    }
+
+    private WeightedInput[] prepareSparseWeights(GraphDatabaseAPI api, String query, Double skipValue, ProcedureConfiguration configuration) throws Exception {
+        Map<String, Object> params = configuration.getParams();
+        Long degreeCutoff = getDegreeCutoff(configuration);
+        int repeatCutoff = configuration.get("sparseVectorRepeatCutoff", REPEAT_CUTOFF).intValue();
+
+        Result result = api.execute(query, params);
+
+        Map<Long, LongDoubleMap> map = new HashMap<>();
+        LongSet ids = new LongHashSet();
+        result.accept((Result.ResultVisitor<Exception>) resultRow -> {
+            long item = resultRow.getNumber("item").longValue();
+            long id = resultRow.getNumber("category").longValue();
+            ids.add(id);
+            double weight = resultRow.getNumber("weight").doubleValue();
+            map.compute(item, (key, agg) -> {
+                if (agg == null) agg = new LongDoubleHashMap();
+                agg.put(id, weight);
+                return agg;
+            });
+            return true;
+        });
+
+        WeightedInput[] inputs = new WeightedInput[map.size()];
+        int idx = 0;
+
+        long[] idsArray = ids.toArray();
+        for (Map.Entry<Long, LongDoubleMap> entry : map.entrySet()) {
+            Long item = entry.getKey();
+            LongDoubleMap sparseWeights = entry.getValue();
+
+            if (sparseWeights.size() > degreeCutoff) {
+                List<Number> weightsList = new ArrayList<>(ids.size());
+                for (long id : idsArray) {
+                    weightsList.add(sparseWeights.getOrDefault(id, skipValue));
+                }
+                int size = weightsList.size();
+                int nonSkipSize = sparseWeights.size();
+                double[] weights = Weights.buildRleWeights(weightsList, repeatCutoff);
+
+                inputs[idx++] = WeightedInput.sparse(item, weights, size, nonSkipSize);
+            }
+        }
+
         if (idx != inputs.length) inputs = Arrays.copyOf(inputs, idx);
         Arrays.sort(inputs);
         return inputs;
@@ -252,67 +252,27 @@ public class SimilarityProc {
         return valueList;
     }
 
-    protected int getTopK(ProcedureConfiguration configuration) {
+    int getTopK(ProcedureConfiguration configuration) {
         return configuration.getInt("topK", 0);
     }
 
-    protected int getTopN(ProcedureConfiguration configuration) {
+    int getTopN(ProcedureConfiguration configuration) {
         return configuration.getInt("top", 0);
     }
 
-    interface SimilarityComputer<T> {
-        SimilarityResult similarity(T source, T target, double cutoff);
-    }
-
-    public static SimilarityConsumer assignSimilarityPairs(TopKConsumer<SimilarityResult>[] topKConsumers) {
-        return (s, t, result) -> {
-            topKConsumers[result.reversed ? t : s].accept(result);
-
-            if (result.bidirectional) {
-                SimilarityResult reverse = result.reverse();
-                topKConsumers[reverse.reversed ? t : s].accept(reverse);
-            }
-        };
-    }
-
-    private class TopKTask<T> implements Runnable {
-        private final int batchSize;
-        private final int taskOffset;
-        private final int multiplier;
-        private final int length;
-        private final T[] ids;
-        private final double similiarityCutoff;
-        private final SimilarityComputer<T> computer;
-        private final TopKConsumer<SimilarityResult>[] topKConsumers;
-
-        TopKTask(int batchSize, int taskOffset, int multiplier, int length, T[] ids, double similiarityCutoff, int topK, SimilarityComputer<T> computer) {
-            this.batchSize = batchSize;
-            this.taskOffset = taskOffset;
-            this.multiplier = multiplier;
-            this.length = length;
-            this.ids = ids;
-            this.similiarityCutoff = similiarityCutoff;
-            this.computer = computer;
-            topKConsumers = initializeTopKConsumers(length, topK);
+    private Supplier<RleDecoder> createDecoderFactory(String graphType, int size) {
+        if(ProcedureConstants.CYPHER_QUERY.equals(graphType)) {
+            return () -> new RleDecoder(size);
         }
 
-        @Override
-        public void run() {
-            SimilarityConsumer consumer = assignSimilarityPairs(topKConsumers);
-            for (int offset = 0; offset < batchSize; offset++) {
-                int sourceId = taskOffset * multiplier + offset;
-                if (sourceId < length) {
-
-                    computeSimilarityForSourceIndex(sourceId, ids, length, similiarityCutoff, consumer, computer);
-                }
-            }
-        }
-
-
-        void mergeInto(TopKConsumer<SimilarityResult>[] target) {
-            for (int i = 0; i < target.length; i++) {
-                target[i].accept(topKConsumers[i]);
-            }
-        }
+        return () -> null;
     }
+
+
+    Supplier<RleDecoder> createDecoderFactory(ProcedureConfiguration configuration, WeightedInput input) {
+        int size = input.initialSize;
+        return createDecoderFactory(configuration.getGraphName("dense"), size);
+    }
+
+
 }

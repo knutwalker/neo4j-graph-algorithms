@@ -31,6 +31,7 @@ import org.neo4j.graphalgo.core.GraphLoader;
 import org.neo4j.graphalgo.core.heavyweight.HeavyGraphFactory;
 import org.neo4j.graphalgo.core.huge.loader.HugeGraphFactory;
 import org.neo4j.graphalgo.core.utils.Pools;
+import org.neo4j.graphalgo.core.utils.TerminationFlag;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphalgo.core.utils.paged.HugeLongArray;
 import org.neo4j.graphalgo.impl.louvain.*;
@@ -148,6 +149,7 @@ public class LouvainWeightedGraphTest {
         final Louvain louvain =
                 new Louvain(graph,Pools.DEFAULT, 1, AllocationTracker.EMPTY)
                 .withProgressLogger(TestProgressLogger.INSTANCE)
+                        .withTerminationFlag(TerminationFlag.RUNNING_TRUE)
                 .compute(10, 10);
 
         final int[][] dendogram = louvain.getDendrogram();
@@ -162,6 +164,27 @@ public class LouvainWeightedGraphTest {
         System.out.println("louvain.getCommunityCount() = " + louvain.getCommunityCount());
         assertCommunities(louvain);
         assertTrue("Maximum iterations > " + MAX_ITERATIONS,louvain.getLevel() < MAX_ITERATIONS);
+    }
+
+    @Test
+    public void testWeightedRandomNeighborLouvain() throws Exception {
+        setup(unidirectional);
+        final Louvain louvain =
+                new Louvain(graph,Pools.DEFAULT, 1, AllocationTracker.EMPTY)
+                .withProgressLogger(TestProgressLogger.INSTANCE)
+                        .withTerminationFlag(TerminationFlag.RUNNING_TRUE)
+                .compute(10, 10, true);
+
+        final int[][] dendogram = louvain.getDendrogram();
+        for (int i = 0; i < dendogram.length; i++) {
+            if (null == dendogram[i]) {
+                break;
+            }
+            System.out.println("level " + i + ": " + Arrays.toString(dendogram[i]));
+        }
+        printCommunities(louvain);
+        System.out.println("louvain.getRuns() = " + louvain.getLevel());
+        System.out.println("louvain.getCommunityCount() = " + louvain.getCommunityCount());
     }
 
     public void assertCommunities(Louvain louvain) {

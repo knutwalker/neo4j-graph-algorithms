@@ -18,17 +18,13 @@
  */
 package org.neo4j.graphalgo.results;
 
-import org.neo4j.graphdb.Node;
-
 public class PageRankScore {
 
     public final long nodeId;
-    @Deprecated public final Node node;
     public final Double score;
 
-    public PageRankScore(long nodeId, final Node node, final Double score) {
+    public PageRankScore(long nodeId, final Double score) {
         this.nodeId = nodeId;
-        this.node = node;
         this.score = score;
     }
 
@@ -59,7 +55,7 @@ public class PageRankScore {
             this.writeProperty = writeProperty;
         }
 
-        public static final class Builder extends AbstractResultBuilder<Stats> {
+        public static final class Builder extends AbstractWriteBuilder<Stats> {
             private long nodes;
             private long iterations;
             private double dampingFactor;
@@ -81,11 +77,13 @@ public class PageRankScore {
                 return this;
             }
 
+            @Override
             public Builder withWrite(boolean write) {
                 this.write = write;
                 return this;
             }
 
+            @Override
             public Builder withProperty(String writeProperty) {
                 this.writeProperty = writeProperty;
                 return this;

@@ -49,6 +49,7 @@ import java.util.stream.Stream;
 public final class LabelPropagationProc {
 
     public static final String CONFIG_WEIGHT_KEY = "weightProperty";
+    public static final String CONFIG_WRITE_KEY = "writeProperty";
     public static final String CONFIG_PARTITION_KEY = "partitionProperty";
     public static final Integer DEFAULT_ITERATIONS = 1;
     public static final Boolean DEFAULT_WRITE = Boolean.TRUE;
@@ -73,23 +74,36 @@ public final class LabelPropagationProc {
     public Stream<LabelPropagationStats> labelPropagation(
             @Name(value = "label", defaultValue = "") String label,
             @Name(value = "relationship", defaultValue = "") String relationshipType,
-            @Name(value = "direction", defaultValue = "OUTGOING") String directionName,
-            @Name(value = "config", defaultValue = "{}") Map<String, Object> config) {
+            @Name(value = "config", defaultValue="null") Object directionOrConfig,
+            @Name(value = "deprecatedConfig", defaultValue = "{}") Map<String, Object> config) {
+        Map<String, Object> rawConfig = config;
+        if (directionOrConfig == null) {
+            if (!config.isEmpty()) {
+                directionOrConfig = "OUTGOING";
+            }
+        } else if (directionOrConfig instanceof Map) {
+            rawConfig = (Map<String, Object>) directionOrConfig;
+        }
 
-        final ProcedureConfiguration configuration = ProcedureConfiguration.create(config)
+        final ProcedureConfiguration configuration = ProcedureConfiguration.create(rawConfig)
                 .overrideNodeLabelOrQuery(label)
-                .overrideRelationshipTypeOrQuery(relationshipType)
-                .overrideDirection(directionName);
+                .overrideRelationshipTypeOrQuery(relationshipType);
+
+        if(directionOrConfig instanceof String) {
+            configuration.overrideDirection((String) directionOrConfig);
+        }
 
         final int iterations = configuration.getIterations(DEFAULT_ITERATIONS);
         final int batchSize = configuration.getBatchSize();
         final int concurrency = configuration.getConcurrency();
         final String partitionProperty = configuration.getString(CONFIG_PARTITION_KEY, DEFAULT_PARTITION_KEY);
+        final String writeProperty = configuration.get(CONFIG_WRITE_KEY, CONFIG_PARTITION_KEY, DEFAULT_PARTITION_KEY);
         final String weightProperty = configuration.getString(CONFIG_WEIGHT_KEY, DEFAULT_WEIGHT_KEY);
 
         LabelPropagationStats.Builder stats = new LabelPropagationStats.Builder()
                 .iterations(iterations)
                 .partitionProperty(partitionProperty)
+                .writeProperty(writeProperty)
                 .weightProperty(weightProperty);
 
         GraphLoader graphLoader = graphLoader(configuration, partitionProperty, weightProperty, createPropertyMappings(partitionProperty, weightProperty));
@@ -105,15 +119,16 @@ public final class LabelPropagationProc {
 
         if(graph.nodeCount() == 0) {
             graph.release();
-            return Stream.of(stats.build());
+            return Stream.of(LabelPropagationStats.EMPTY);
         }
 
-        int[] labels = compute(direction, iterations, batchSize, concurrency, graph, stats);
-        if (configuration.isWriteFlag(DEFAULT_WRITE) && partitionProperty != null) {
-            write(concurrency, partitionProperty, graph, labels, stats);
+        final int[] labels = compute(direction, iterations, batchSize, concurrency, graph, stats);
+        if (configuration.isWriteFlag(DEFAULT_WRITE) && writeProperty != null) {
+            stats.withWrite(true);
+            write(concurrency, writeProperty, graph, labels, stats);
         }
 
-        return Stream.of(stats.build());
+        return Stream.of(stats.build(graph.nodeCount(), l -> (long) labels[(int) l]));
     }
 
     @Procedure(value = "algo.labelPropagation.stream")
@@ -205,7 +220,6 @@ public final class LabelPropagationProc {
 
             stats.iterations(labelPropagation.ranIterations());
             stats.didConverge(labelPropagation.didConverge());
-            stats.nodes(result.length);
 
             labelPropagation.release();
             graph.release();
@@ -219,7 +233,6 @@ public final class LabelPropagationProc {
             HeavyGraph graph,
             int[] labels,
             LabelPropagationStats.Builder stats) {
-        stats.write(true);
         try (ProgressTimer timer = stats.timeWrite()) {
             Exporter.of(dbAPI, graph)
                     .withLog(log)

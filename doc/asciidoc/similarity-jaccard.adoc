@@ -11,6 +11,12 @@ Jaccard similarity (coefficient), a term coined by https://en.wikipedia.org/wiki
 It is defined as the size of the intersection divided by the size of the union of two sets.
 // end::introduction[]
 
+This section includes:
+
+* <<algorithms-similarity-jaccard-context, History and explanation>>
+* <<algorithms-similarity-jaccard-usecase, Use-cases - when to use the Jaccard Similarity algorithm>>
+* <<algorithms-similarity-jaccard-sample, Jaccard Similarity algorithm sample>>
+
 
 [[algorithms-similarity-jaccard-context]]
 == History and explanation
@@ -29,7 +35,7 @@ image::jaccard.png[role="middle"]
 
 The library contains both procedures and functions to calculate similarity between sets of data.
 The function is best used when calculating the similarity between small numbers of sets.
-The procedures parallelize the computation, and are therefore a better bet when computing similarities on bigger datasets.
+The procedures parallelize the computation, and are therefore more appropriate for computing similarities on bigger datasets.
 
 // end::explanation[]
 
@@ -78,6 +84,41 @@ J(A,B) = 2 / 3 + 4 - 2
 ----
 include::scripts/similarity-jaccard.cypher[tag=create-sample-graph]
 ----
+
+.The following will return the Jaccard similarity of Karin and Arya:
+[source, cypher]
+----
+include::scripts/similarity-jaccard.cypher[tag=function-cypher]
+----
+
+// tag::function-cypher[]
+.Results
+[opts="header"]
+|===
+| `from`       | `to`         | `similarity`
+| "Karin" | "Arya" | 0.66
+
+|===
+// end::function-cypher[]
+
+.The following will return the Jaccard similarity of Karin and the other people that have a cuisine in common:
+[source, cypher]
+----
+include::scripts/similarity-jaccard.cypher[tag=function-cypher-all]
+----
+
+// tag::function-cypher--all[]
+.Results
+[opts="header"]
+|===
+| `from`       | `to`         | `similarity`
+| "Karin" | "Arya"     | 0.66
+| "Karin" | "Michael"  | 0.25
+| "Karin" | "Praveena" | 0.0
+| "Karin" | "Zhen"     | 0.0
+
+|===
+// end::function-cypher-all[]
 
 .The following will return a stream of node pairs along with their intersection and Jaccard similarities:
 [source, cypher]
@@ -221,6 +262,7 @@ include::scripts/similarity-jaccard.cypher[tag=query]
 | `degreeCutoff`           | int     | 0              | yes      | The threshold for the number of items in the `targets` list. If the list contains less than this amount, that node will be excluded from the calculation.
 | `concurrency`            | int     | available CPUs | yes      | The number of concurrent threads.
 | `write`                  | boolean | false          | yes      | Indicates whether results should be stored.
+| `writeBatchSize`            | int     | 10000 | yes      | The batch size to use when storing results.
 | `writeRelationshipType`  | string  | SIMILAR        | yes      | The relationship type to use when storing results.
 | `writeProperty`          | string  | score          | yes      | The property to use when storing results.
 |===

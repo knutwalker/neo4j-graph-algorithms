@@ -53,7 +53,7 @@ public final class ParallelUtil {
         if (concurrency <= 0) {
             throw new IllegalArgumentException("concurrency must be > 0");
         }
-        final int batchSize = nodeCount / concurrency;
+        final int batchSize = Math.max(1, nodeCount / concurrency);
         int numberOfBatches = ParallelUtil.threadSize(batchSize, nodeCount);
         if (numberOfBatches == 1) {
             return Collections.singleton(new IdMap.IdIterable(0, nodeCount));
@@ -107,6 +107,13 @@ public final class ParallelUtil {
         int targetBatchSize = threadSize(concurrency, nodeCount);
         return Math.max(minBatchSize, targetBatchSize);
     }
+
+    public static int adjustBatchSize(
+            int nodeCount,
+            int concurrency) {
+        return adjustBatchSize(nodeCount, concurrency, DEFAULT_BATCH_SIZE);
+    }
+
 
     public static long adjustBatchSize(
             long nodeCount,
@@ -667,7 +674,6 @@ public final class ParallelUtil {
             int maxWaitRetries,
             TerminationFlag terminationFlag,
             ExecutorService executor) {
-
         if (!canRunInParallel(executor)
                 || tasks.size() == 1
                 || concurrency <= 1) {

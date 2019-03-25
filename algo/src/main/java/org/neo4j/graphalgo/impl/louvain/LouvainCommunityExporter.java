@@ -93,7 +93,7 @@ public class LouvainCommunityExporter extends StatementApi {
         private void writeEverything() {
             acceptInTransaction(statement -> {
                 final Write dataWriteOperations = statement.dataWrite();
-                for(PrimitiveIntIterator it = iterable.iterator(); it.hasNext(); ) {
+                for (PrimitiveIntIterator it = iterable.iterator(); it.hasNext(); ) {
                     final int id = it.next();
                     // build int array
                     final int[] data = new int[allCommunities.length];
@@ -121,7 +121,7 @@ public class LouvainCommunityExporter extends StatementApi {
         private void onlyWriteFinalCommunities() {
             acceptInTransaction(statement -> {
                 final Write dataWriteOperations = statement.dataWrite();
-                for(PrimitiveIntIterator it = iterable.iterator(); it.hasNext(); ) {
+                for (PrimitiveIntIterator it = iterable.iterator(); it.hasNext(); ) {
                     final int id = it.next();
 
                     dataWriteOperations.nodeSetProperty(

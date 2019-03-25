@@ -19,14 +19,17 @@
 package org.neo4j.graphalgo.similarity;
 
 import org.neo4j.graphalgo.core.ProcedureConfiguration;
+import org.neo4j.graphalgo.similarity.recorder.SimilarityRecorder;
 import org.neo4j.procedure.Description;
 import org.neo4j.procedure.Mode;
 import org.neo4j.procedure.Name;
 import org.neo4j.procedure.Procedure;
 
-import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
+
+import static org.neo4j.graphalgo.similarity.SimilarityInput.indexesFor;
 
 public class EuclideanProc extends SimilarityProc {
 
@@ -35,52 +38,85 @@ public class EuclideanProc extends SimilarityProc {
             "YIELD item1, item2, count1, count2, intersection, similarity - computes euclidean distance")
     // todo count1,count2 = could be the non-null values, intersection the values where both are non-null?
     public Stream<SimilarityResult> euclideanStream(
-            @Name(value = "data", defaultValue = "null") List<Map<String,Object>> data,
-            @Name(value = "config", defaultValue = "{}") Map<String, Object> config) {
-
-        SimilarityComputer<WeightedInput> computer = (s,t,cutoff) -> s.sumSquareDelta(cutoff, t);
-
+            @Name(value = "data", defaultValue = "null") Object rawData,
+            @Name(value = "config", defaultValue = "{}") Map<String, Object> config) throws Exception {
         ProcedureConfiguration configuration = ProcedureConfiguration.create(config);
+        Double skipValue = readSkipValue(configuration);
 
-        WeightedInput[] inputs = prepareWeights(data, getDegreeCutoff(configuration));
+        WeightedInput[] inputs = prepareWeights(rawData, configuration, skipValue);
 
-        double similarityCutoff = getSimilarityCutoff(configuration);
-        // as we don't compute the sqrt until the end
-        if (similarityCutoff > 0d) similarityCutoff *= similarityCutoff;
+        if(inputs.length == 0) {
+            return Stream.empty();
+        }
 
+        long[] inputIds = SimilarityInput.extractInputIds(inputs);
+        int[] sourceIndexIds = indexesFor(inputIds, configuration, "sourceIds");
+        int[] targetIndexIds = indexesFor(inputIds, configuration, "targetIds");
+        SimilarityComputer<WeightedInput> computer = similarityComputer(skipValue, sourceIndexIds, targetIndexIds);
+
+        double similarityCutoff = similarityCutoff(configuration);
         int topN = -getTopN(configuration);
         int topK = -getTopK(configuration);
 
-        Stream<SimilarityResult> stream = topN(similarityStream(inputs, computer, configuration, similarityCutoff, topK), topN);
-
-        return stream.map(SimilarityResult::squareRooted);
+        return generateWeightedStream(configuration, inputs, sourceIndexIds, targetIndexIds, similarityCutoff, topN, topK, computer);
     }
+
 
     @Procedure(name = "algo.similarity.euclidean", mode = Mode.WRITE)
     @Description("CALL algo.similarity.euclidean([{item:id, weights:[weights]}], {similarityCutoff:-1,degreeCutoff:0}) " +
             "YIELD p50, p75, p90, p99, p999, p100 - computes euclidean similarities")
     public Stream<SimilaritySummaryResult> euclidean(
-            @Name(value = "data", defaultValue = "null") List<Map<String, Object>> data,
-            @Name(value = "config", defaultValue = "{}") Map<String, Object> config) {
-
-        SimilarityComputer<WeightedInput> computer = (s,t,cutoff) -> s.sumSquareDelta(cutoff, t);
-
+            @Name(value = "data", defaultValue = "null") Object rawData,
+            @Name(value = "config", defaultValue = "{}") Map<String, Object> config) throws Exception {
         ProcedureConfiguration configuration = ProcedureConfiguration.create(config);
+        Double skipValue = readSkipValue(configuration);
 
-        WeightedInput[] inputs = prepareWeights(data, getDegreeCutoff(configuration));
+        WeightedInput[] inputs = prepareWeights(rawData, configuration, skipValue);
 
-        double similarityCutoff = getSimilarityCutoff(configuration);
-        // as we don't compute the sqrt until the end
-        if (similarityCutoff > 0d) similarityCutoff *= similarityCutoff;
+        String writeRelationshipType = configuration.get("writeRelationshipType", "SIMILAR");
+        String writeProperty = configuration.getWriteProperty("score");
+        if(inputs.length == 0) {
+            return emptyStream(writeRelationshipType, writeProperty);
+        }
 
+        long[] inputIds = SimilarityInput.extractInputIds(inputs);
+        int[] sourceIndexIds = indexesFor(inputIds, configuration, "sourceIds");
+        int[] targetIndexIds = indexesFor(inputIds, configuration, "targetIds");
+        SimilarityComputer<WeightedInput> computer = similarityComputer(skipValue, sourceIndexIds, targetIndexIds);
+
+
+        double similarityCutoff = similarityCutoff(configuration);
         int topN = -getTopN(configuration);
         int topK = -getTopK(configuration);
 
-        Stream<SimilarityResult> stream = topN(similarityStream(inputs, computer, configuration, similarityCutoff, topK), topN)
-                .map(SimilarityResult::squareRooted);
+        SimilarityRecorder<WeightedInput> recorder = similarityRecorder(computer, configuration);
+        Stream<SimilarityResult> stream = generateWeightedStream(configuration, inputs, sourceIndexIds, targetIndexIds, similarityCutoff, topN, topK, recorder);
 
         boolean write = configuration.isWriteFlag(false); //  && similarityCutoff != 0.0;
-        return writeAndAggregateResults(configuration, stream, inputs.length, write, "SIMILAR");
+        return writeAndAggregateResults(stream, inputs.length, sourceIndexIds.length, targetIndexIds.length, configuration, write, writeRelationshipType, writeProperty, recorder);
+    }
+
+    Stream<SimilarityResult> generateWeightedStream(ProcedureConfiguration configuration, WeightedInput[] inputs,
+                                                    int[] sourceIndexIds, int[] targetIndexIds, double similarityCutoff, int topN, int topK,
+                                                    SimilarityComputer<WeightedInput> computer) {
+        Supplier<RleDecoder> decoderFactory = createDecoderFactory(configuration, inputs[0]);
+        return topN(similarityStream(inputs, sourceIndexIds, targetIndexIds, computer, configuration, decoderFactory, similarityCutoff, topK), topN)
+                .map(SimilarityResult::squareRooted);
+    }
+
+    private double similarityCutoff(ProcedureConfiguration configuration) {
+        double similarityCutoff = getSimilarityCutoff(configuration);
+        // as we don't compute the sqrt until the end
+        if (similarityCutoff > 0d) similarityCutoff *= similarityCutoff;
+        return similarityCutoff;
+    }
+
+    private SimilarityComputer<WeightedInput> similarityComputer(Double skipValue, int[] sourceIndexIds, int[] targetIndexIds) {
+        boolean bidirectional = sourceIndexIds.length == 0 && targetIndexIds.length == 0;
+
+        return skipValue == null ?
+                (decoder, s, t, cutoff) -> s.sumSquareDelta(decoder, cutoff, t, bidirectional) :
+                (decoder, s, t, cutoff) -> s.sumSquareDeltaSkip(decoder, cutoff, t, skipValue, bidirectional);
     }
 
 

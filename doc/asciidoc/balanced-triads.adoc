@@ -13,8 +13,15 @@ It is based on the https://en.wikipedia.org/wiki/Balance_theory[Balance Theory] 
 Unlike other algorithms where there are only positive relationships available, balance theory differentiates between positive and negative relationships.
 Certain structures between individuals and objects are perceived as balanced whereas others are not.
 In general balanced structures are preferred over imbalanced ones.
-
 // end::introduction[]
+
+This section includes:
+
+* <<algorithms-balanced-triads-context, History and explanation>>
+* <<algorithms-balanced-triads-usecase, Use-cases - when to use the Balance Triads algorithm>>
+* <<algorithms-balanced-triads-sample, Balanced Triads algorithm sample>>
+* <<algorithms-balanced-triads-syntax, Syntax>>
+* <<algorithms-balanced-triads-support, Graph type support>>
 
 
 [[algorithms-balanced-triads-context]]
@@ -27,9 +34,9 @@ It uses https://en.wikipedia.org/wiki/Signed_graph[Signed graph] model to differ
 
 Determining if the triad is balanced is simple math:
 
-+ + + = Balanced 
-- + - = Balanced 
-- + + = Unbalanced 
++ + + = Balanced
+- + - = Balanced
+- + + = Unbalanced
 - - - = Unbalanced
 
 // end::explanation[]
@@ -89,8 +96,6 @@ Anna is a member of six triads out of which three are balanced and three are unb
 All others are each members of one balanced and one unbalanced triad or triangle.
 // end::stream-sample-graph-explanation[]
 
-[[algorithms-balanced-triads-example]]
-== Example usage
 
 [[algorithms-balanced-triads-syntax]]
 == Syntax
@@ -147,15 +152,33 @@ YIELD loadMillis, computeMillis, writeMillis, nodeCount, balancedTriadCount, unb
 [opts="header",cols="1,1,6"]
 |===
 | Name                         | Type  | Description
-| nodeCount                    | int   | The number of nodes considered
-| loadMillis                   | int   | Milliseconds for loading data
-| evalMillis                   | int   | Milliseconds for running the algorithm
-| writeMillis                  | int   | Milliseconds for writing result data back
+| loadMillis    | int  | Milliseconds for loading data
+| computeMillis | int  | Milliseconds for running the algorithm
+| writeMillis   | int  | Milliseconds for writing result data back
+| postProcessingMillis    | int  | Milliseconds for computing percentiles and community count
+
+| nodeCount | int | The number of nodes considered
 | balancedTriadCount           | int   | The number of balanced triads in the given graph
 | unbalancedTriadCount         | int   | The number of unbalanced triads in the given graph
+
+| p1                   | double  | The 1 percentile of number of balanced triads.
+| p5                   | double  | The 5 percentile of number of balanced triads.
+| p10                   | double  | The 10 percentile of number of balanced triads.
+| p25                   | double  | The 25 percentile of number of balanced triads.
+| p50                   | double  | The 50 percentile of number of balanced triads.
+| p75                   | double  | The 75 percentile of number of balanced triads.
+| p90                   | double  | The 90 percentile of number of balanced triads.
+| p95                   | double  | The 95 percentile of number of balanced triads.
+| p99                   | double  | The 99 percentile of number of balanced triads.
+| p100                  | double  | The 100 percentile of number of balanced triads.
+
+| write | boolean | Specifies if the result was written back as a node property
+| balancedProperty | string | The property name the number of balanced triads is written to
+| unbalancedProperty | string | The property name the number of unbalanced triads is written to
 |===
 
 
+[[algorithms-balanced-triads-support]]
 == Graph type support
 
 The Balanced Triads algorithm support the following graph type:

@@ -10,6 +10,17 @@ This section describes the Yen's K-shortest paths algorithm in the Neo4j Graph A
 Yen's K-shortest paths algorithm computes single-source K-shortest loopless paths for a graph with non-negative relationship weights.
 // end::introduction[]
 
+This section includes:
+
+* <<algorithms-yens-k-shortest-path-context, History and explanation>>
+* <<algorithms-yens-k-shortest-path-usecase, Use-cases - when to use the Yen's K-shortest paths algorithm>>
+* <<algorithms-yens-k-shortest-path-limitations, Constraints - when not to use the Yen's K-shortest paths algorithm>>
+* <<algorithms-yens-k-shortest-path-sample, Yen's K-shortest paths algorithm sample>>
+* <<algorithms-yens-k-shortest-path-cp, Cypher projection>>
+* <<algorithms-yens-k-shortest-path-syntax, Syntax>>
+* <<algorithms-yens-k-shortest-path-support, Graph type support>>
+* <<algorithms-yens-k-shortest-path-imp, Implementations>>
+
 
 [[algorithms-yens-k-shortest-path-context]]
 == History and explanation
@@ -58,6 +69,27 @@ include::scripts/yens-k-shortest-paths.cypher[tag=create-sample-graph]
 include::scripts/yens-k-shortest-paths.cypher[tag=stream-sample-graph]
 ----
 
+// tag::stream[]
+.Results
+[opts="header"]
+|===
+| `places`                    | `costs`                    | `totalCost`
+| ["A", "B", "D", "E", "F"] | [50.0, 40.0, 30.0, 40.0] | 160.0
+| ["A", "C", "D", "E", "F"] | [50.0, 40.0, 30.0, 40.0] | 160.0
+| ["A", "B", "D", "F"]      | [50.0, 40.0, 80.0]       | 170.0
+|===
+// end::stream[]
+
+This procedure doesn't return paths by default, but we can have it return those by passing in the config `path: true`.
+
+.The following will run the algorithm and stream results, including paths:
+[source, cypher]
+----
+include::scripts/yens-k-shortest-paths.cypher[tag=stream-sample-with-path-graph]
+----
+
+image::yens-path.svg[]
+
 .The following will run the algorithm and write back results:
 [source, cypher]
 ----
@@ -80,6 +112,19 @@ image::yens_result.png[]
 The quickest route takes us from A to B, via D and E and is saved as `PATH_0`.
 Second quickest path is saved as `PATH_1` and third one is saved as`PATH_2`
 // end::write-sample-graph-explanation[]
+
+
+[[algorithms-yens-k-shortest-path-cp]]
+== Cypher projection
+
+include::cypher-projection.adoc[tag=explanation]
+
+.Set `graph:'cypher'` in the config:
+
+[source, cypher]
+----
+include::scripts/yens-k-shortest-paths.cypher[tag=cypher-loading]
+----
 
 
 [[algorithms-yens-k-shortest-path-syntax]]
@@ -122,6 +167,7 @@ YIELD resultCount, loadMillis, evalMillis, writeMillis
 |===
 
 
+[[algorithms-yens-k-shortest-path-support]]
 == Graph type support
 
 The Shortest Path algorithms support the following graph types:
@@ -136,19 +182,7 @@ The Shortest Path algorithms support the following graph types:
 ** direction: 'BOTH', weightProperty: 'cost'
 
 
-== Cypher projection
-
-If label and relationship-type are not selective enough to describe your subgraph to run the algorithm on, you can use Cypher statements to load or project subsets of your graph.
-This can also be used to run algorithms on a virtual graph.
-
-.Set `graph:'cypher'` in the config:
-
-[source, cypher]
-----
-include::scripts/yens-k-shortest-paths.cypher[tag=cypher-loading]
-----
-
-
+[[algorithms-yens-k-shortest-path-imp]]
 == Implementations
 
 `algo.kShortestPaths`

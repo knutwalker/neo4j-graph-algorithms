@@ -122,11 +122,11 @@ public final class DisjointSetStruct {
     }
 
     /**
-     * element count
+     * element (node) count
      *
      * @return the element count
      */
-    public int count() {
+    public int capacity() {
         return parent.length;
     }
 
@@ -183,7 +183,8 @@ public final class DisjointSetStruct {
 
     /**
      * join set of p (Sp) with set of q (Sq) so that {@link DisjointSetStruct#connected(int, int)}
-     * for any pair of (Spi, Sqj) evaluates to true
+     * for any pair of (Spi, Sqj) evaluates to true. Some optimizations exists
+     * which automatically balance the tree, the "weighted union rule" is used here.
      *
      * @param p an item of Sp
      * @param q an item of Sq
@@ -208,6 +209,10 @@ public final class DisjointSetStruct {
         }
     }
 
+    /**
+     * evaluate number of sets
+     * @return
+     */
     public int getSetCount() {
         final IntSet set = new IntScatterSet();
         forEach((nodeId, setId) -> {
@@ -234,11 +239,11 @@ public final class DisjointSetStruct {
     public String toString() {
         final StringBuilder builder = new StringBuilder();
         builder.append("\n");
-        for (int i = 0; i < count(); i++) {
+        for (int i = 0; i < capacity(); i++) {
             builder.append(String.format(" %d ", i));
         }
         builder.append("\n");
-        for (int i = 0; i < count(); i++) {
+        for (int i = 0; i < capacity(); i++) {
             builder.append(String.format("[%d]", find(i)));
         }
         return builder.toString();
@@ -282,7 +287,7 @@ public final class DisjointSetStruct {
 
         private NodeSetIterator(DisjointSetStruct struct) {
             this.struct = struct;
-            this.length = struct.count();
+            this.length = struct.capacity();
         }
 
         @Override
@@ -311,8 +316,8 @@ public final class DisjointSetStruct {
 
         private ConcurrentNodeSetIterator(DisjointSetStruct struct, int startOffset, int length) {
             this.struct = struct;
-            this.length = length + offset > struct.count()
-                    ? struct.count() - offset
+            this.length = length + offset > struct.capacity()
+                    ? struct.capacity() - offset
                     : length;
             this.offset = startOffset;
         }
@@ -330,6 +335,9 @@ public final class DisjointSetStruct {
         }
     }
 
+    /**
+     * union find result type
+     */
     public static class Result {
 
         /**
@@ -353,6 +361,9 @@ public final class DisjointSetStruct {
         }
     }
 
+    /**
+     * concurrent property translator for export
+     */
     public final static class Translator implements PropertyTranslator.OfInt<DisjointSetStruct> {
 
         public static final PropertyTranslator<DisjointSetStruct> INSTANCE = new Translator();

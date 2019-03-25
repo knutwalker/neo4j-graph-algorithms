@@ -14,6 +14,17 @@ One interesting feature of LPA is that nodes can be assigned preliminary labels 
 This means that it can be used as semi-supervised way of finding communities where we hand-pick some initial communities.
 // end::introduction[]
 
+This section includes:
+
+* <<algorithms-label-propagation-context, History and explanation>>
+* <<algorithms-label-propagation-usecase, Use-cases - when to use the Label Propagation algorithm>>
+* <<algorithms-label-propagation-limitations, Constraints - when not to use the Label Propagation algorithm>>
+* <<algorithms-label-propagation-sample, Label Propagation algorithm sample>>
+** <<algorithms-label-propagation-sample-seed_label, Using seed labels>>
+* <<algorithms-label-propagation-cp, Cypher projection>>
+* <<algorithms-label-propagation-syntax, Syntax>>
+* <<algorithms-label-propagation-support, Graph type support>>
+
 
 [[algorithms-label-propagation-context]]
 == History and explanation
@@ -109,11 +120,12 @@ Only Charles doesn't strongly fit into either side, but ends up with Doug and Ma
 // end::stream-sample-graph-explanation[]
 
 
+[[algorithms-label-propagation-sample-seed_label]]
 === Using seed labels
 
 At the beginning of the algorithm, every node is initialized with unique label (called as identifier) and the labels propagate through the network.
 
-It is possible to define preliminary labels (identifiers) of nodes using the `partition` parameter.
+It is possible to define preliminary labels (identifiers) of nodes using the `partitionProperty` parameter.
 We need to save a preliminary set of labels that we would like to run the Label Propagation algorithm with as a property of nodes (must be a number).
 In our example graph we saved them as the property `seed_label`.
 
@@ -128,15 +140,28 @@ include::scripts/label-propagation.cypher[tag=write-existing-label-sample-graph]
 ----
 
 
+[[algorithms-label-propagation-cp]]
+== Cypher projection
+
+include::cypher-projection.adoc[tag=explanation]
+
+.Set `graph:'cypher'` in the config:
+
+[source, cypher]
+----
+include::scripts/label-propagation.cypher[tag=cypher-loading]
+----
+
+
 [[algorithms-label-propagation-syntax]]
 == Syntax
 
 .The following will run the algorithm and write back results:
 [source, cypher]
 ----
-CALL algo.labelPropagation(label:String, relationship:String, direction:String, {iterations:1,
-    weightProperty:'weight', partitionProperty:'partition', write:true, concurrency:4})
-YIELD nodes, iterations, didConverge, loadMillis, computeMillis, writeMillis, write, weightProperty, partitionProperty
+CALL algo.labelPropagation(label:String, relationship:String, {iterations:1,
+    weightProperty:'weight', writeProperty:'partition', write:true, concurrency:4})
+YIELD nodes, iterations, didConverge, loadMillis, computeMillis, writeMillis, write, weightProperty, writeProperty
 ----
 
 .Parameters
@@ -149,7 +174,8 @@ YIELD nodes, iterations, didConverge, loadMillis, computeMillis, writeMillis, wr
 | concurrency       | int     | available CPUs | yes      | The number of concurrent threads
 | iterations        | int     | 1              | yes      | The maximum number of iterations to run
 | weightProperty    | string  | 'weight'       | yes      | The property name of node and/or relationship that contain weight. Must be numeric.
-| partitionProperty | string  | 'partition'    | yes      | The property name written back to the partition of the graph in which the node reside. Can be used to define initial set of labels (must be a number)
+| partitionProperty | string  | 'partition'    | yes      | Used to define initial set of labels (must be a number)
+| writeProperty | string  | 'partition'    | yes      | The property name written back to the partition of the graph in which the node resides.
 | write             | boolean | true           | yes      | Specifies if the result should be written back as a node property
 | graph             | string  | 'heavy'        | yes      | Use 'heavy' when describing the subset of the graph with label and relationship-type parameter. Use 'cypher' for describing the subset with cypher node-statement and relationship-statement
 |===
@@ -158,22 +184,38 @@ YIELD nodes, iterations, didConverge, loadMillis, computeMillis, writeMillis, wr
 [opts="header",cols="1,1,6"]
 |===
 | Name | Type | Description
-| nodes | int | The number of nodes considered
-| iterations | int | The number of iterations that were executed
-| didConverge | boolean | True if the algorithm did converge to a stable labelling within the provided number of maximum iterations
 | loadMillis | int | Milliseconds for loading data
 | computeMillis | int | Milliseconds for running the algorithm
 | writeMillis | int | Milliseconds for writing result data back
-| weightProperty | string | The property name that contains weight
-| partitionProperty | string | The property name written back to
+| postProcessingMillis    | int  | Milliseconds for computing percentiles and community count
+
+| nodes | int | The number of nodes considered
+| communityCount | int  | The number of communities found
+| iterations | int | The number of iterations that were executed
+| didConverge | boolean | True if the algorithm did converge to a stable labelling within the provided number of maximum iterations
+
+| p1                   | double  | The 1 percentile of community size.
+| p5                   | double  | The 5 percentile of community size.
+| p10                   | double  | The 10 percentile of community size.
+| p25                   | double  | The 25 percentile of community size.
+| p50                   | double  | The 50 percentile of community size.
+| p75                   | double  | The 75 percentile of community size.
+| p90                   | double  | The 90 percentile of community size.
+| p95                   | double  | The 95 percentile of community size.
+| p99                   | double  | The 99 percentile of community size.
+| p100                  | double  | The 100 percentile of community size.
+
 | write | boolean | Specifies if the result was written back as a node property
+| writeProperty | string | The property name written back to
+| weightProperty | string | The property name that contains weight
+
 |===
 
 .The following will run the algorithm and stream back results:
 [source,cypher]
 ----
 CALL algo.labelPropagation.stream(label:String, relationship:String, {iterations:1,
-    weightProperty:'weight', partitionProperty:'partition', concurrency:4, direction:'OUTGOING'})
+    weightProperty:'weight', writeProperty:'partition', concurrency:4, direction:'OUTGOING'})
 YIELD nodeId, label
 ----
 
@@ -187,7 +229,8 @@ YIELD nodeId, label
 | concurrency       | int    | available CPUs | yes      | The number of concurrent threads
 | iterations        | int    | 1              | yes      | The maximum number of iterations to run
 | weightProperty    | string | 'weight'       | yes      | The property name of node and/or relationship that contain weight. Must be numeric.
-| partitionProperty | string | 'partition'    | yes      | The property name written back to the partition of the graph in which the node reside. Can be used to define initial set of labels (must be a number)
+| partitionProperty | string  | 'partition'    | yes      | Used to define initial set of labels (must be a number)
+| writeProperty | string  | 'partition'    | yes      | The property name written back to the partition of the graph in which the node resides.
 | graph             | string | 'heavy'        | yes      | Use 'heavy' when describing the subset of the graph with label and relationship-type parameter. Use 'cypher' for describing the subset with cypher node-statement and relationship-statement
 |===
 
@@ -200,19 +243,7 @@ YIELD nodeId, label
 |===
 
 
-== Cypher projection
-
-If label and relationship-type are not selective enough to describe your subgraph to run the algorithm on, you can use Cypher statements to load or project subsets of your graph.
-This can also be used to run algorithms on a virtual graph.
-
-.Set `graph:'cypher'` in the config:
-
-[source, cypher]
-----
-include::scripts/label-propagation.cypher[tag=cypher-loading]
-----
-
-
+[[algorithms-label-propagation-support]]
 == Graph type support
 
 The Label Propagation algorithm supports the following graph types:

@@ -25,7 +25,10 @@ import java.util.concurrent.atomic.AtomicLong;
 public class SimilaritySummaryResult {
 
     public final long nodes;
+    public final long sourceNodes;
+    public final long targetNodes;
     public final long similarityPairs;
+    public final long computations;
     public final boolean write;
     public final String writeRelationshipType;
     public final String writeProperty;
@@ -42,13 +45,16 @@ public class SimilaritySummaryResult {
     public final double p999;
     public final double p100;
 
-    public SimilaritySummaryResult(long nodes, long similarityPairs,
-                                   boolean write, String writeRelationshipType, String writeProperty,
+    public SimilaritySummaryResult(long nodes, long sourceNodes, long targetNodes, long similarityPairs,
+                                   long computations, boolean write, String writeRelationshipType, String writeProperty,
                                    double min, double max, double mean, double stdDev,
                                    double p25, double p50, double p75, double p90, double p95,
                                    double p99, double p999, double p100) {
         this.nodes = nodes;
+        this.sourceNodes = sourceNodes;
+        this.targetNodes = targetNodes;
         this.similarityPairs = similarityPairs;
+        this.computations = computations;
         this.write = write;
         this.writeRelationshipType = writeRelationshipType;
         this.writeProperty = writeProperty;
@@ -66,10 +72,16 @@ public class SimilaritySummaryResult {
         this.p100 = p100;
     }
 
-    static SimilaritySummaryResult from(long length, AtomicLong similarityPairs, String writeRelationshipType, String writeProperty, boolean write, DoubleHistogram histogram) {
+    static SimilaritySummaryResult from(long length, long sourceIdsLength, long targetIdsLength, AtomicLong similarityPairs, long computations, String writeRelationshipType, String writeProperty, boolean write, DoubleHistogram histogram) {
+        long sourceNodes = sourceIdsLength == 0 ? length : sourceIdsLength;
+        long targetNodes = targetIdsLength == 0 ? length : targetIdsLength;
+
         return new SimilaritySummaryResult(
                 length,
+                sourceNodes,
+                targetNodes,
                 similarityPairs.get(),
+                computations,
                 write,
                 writeRelationshipType,
                 writeProperty,
