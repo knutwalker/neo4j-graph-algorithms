@@ -22,8 +22,16 @@ import org.neo4j.graphalgo.core.write.PropertyTranslator;
 
 import java.util.Arrays;
 import java.util.function.IntToLongFunction;
+import java.util.function.LongFunction;
 import java.util.function.LongUnaryOperator;
 
+import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.PAGE_SHIFT;
+import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.PAGE_SIZE;
+import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.SINGLE_PAGE_SIZE;
+import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.exclusiveIndexOfPage;
+import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.indexInPage;
+import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.numberOfPages;
+import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.pageIndex;
 import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.shallowSizeOfInstance;
 import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfLongArray;
 import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfObjectArray;
@@ -54,7 +62,7 @@ import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfObjectArray
  *
  * @author phorn@avantgarde-labs.de
  */
-public abstract class HugeLongArray {
+public abstract class HugeLongArray extends HugeArray<long[], Long, HugeLongArray> {
 
     /**
      * @return the long value at the given index
@@ -109,67 +117,67 @@ public abstract class HugeLongArray {
     abstract public void fill(long value);
 
     /**
-     * Copies the content of this array into the target array.
-     * <p>
-     * The behavior is identical to {@link System#arraycopy(Object, int, Object, int, int)}.
+     * {@inheritDoc}
      */
-    abstract public void copyTo(final HugeLongArray dest, long length);
-
-    /**
-     * Returns the length of this array.
-     * <p>
-     * If the size is greater than zero, the highest supported index is {@code size() - 1}
-     * <p>
-     * The behavior is identical to calling {@code array.length} on primitive arrays.
-     */
+    @Override
     abstract public long size();
 
     /**
-     * Destroys the data, allowing the underlying storage arrays to be collected as garbage.
-     * The array is unusable after calling this method and will throw {@link NullPointerException}s on virtually every method invocation.
-     * <p>
-     * Note that the data might not immediately collectible if there are still cursors alive that reference this array.
-     * You have to {@link Cursor#close()} every cursor instance as well.
-     * <p>
-     * The amount is not removed from the {@link AllocationTracker} that had been provided in the {@link #newArray(long, AllocationTracker) Constructor}.
-     *
-     * @return the amount of memory freed, in bytes.
+     * {@inheritDoc}
      */
+    @Override
     abstract public long release();
 
     /**
-     * Returns a new {@link Cursor} for this array. The cursor is not positioned and in an invalid state.
-     * You must call {@link Cursor#next()} first to position the cursor to a valid state.
-     * Obtaining a {@link Cursor} for an empty array (where {@link #size()} returns {@code 0}) is undefined and
-     * might result in a {@link NullPointerException} or another {@link RuntimeException}.
+     * {@inheritDoc}
      */
-    abstract public Cursor newCursor();
+    @Override
+    abstract public HugeCursor<long[]> newCursor();
 
     /**
-     * Resets the {@link Cursor} to range from index 0 until {@link #size()}.
-     * The returned cursor is not positioned and in an invalid state.
-     * You must call {@link Cursor#next()} first to position the cursor to a valid state.
-     * The returned cursor might be the reference-same ({@code ==}) one as the provided one.
-     * Resetting the {@link Cursor} of an empty array (where {@link #size()} returns {@code 0}) is undefined and
-     * might result in a {@link NullPointerException} or another {@link RuntimeException}.
+     * {@inheritDoc}
      */
-    abstract public Cursor cursor(Cursor cursor);
+    @Override
+    abstract public void copyTo(final HugeLongArray dest, final long length);
 
     /**
-     * Resets the {@link Cursor} to range from index {@code start} (inclusive, the first index to be contained)
-     * until {@code end} (exclusive, the first index not to be contained).
-     * The cursor is not positioned and all warning from obtaining a full-range cursor apply.
-     *
-     * @see HugeLongArray#cursor(Cursor)
+     * {@inheritDoc}
      */
-    abstract public Cursor cursor(Cursor cursor, long start, long end);
+    @Override
+    public final Long boxedGet(final long index) {
+        return get(index);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void boxedSet(final long index, final Long value) {
+        set(index, value);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void boxedSetAll(final LongFunction<Long> gen) {
+        setAll(gen::apply);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void boxedFill(final Long value) {
+        fill(value);
+    }
 
     /**
      * Creates a new array if the given size, tracking the memory requirements into the given {@link AllocationTracker}.
      * The tracker is no longer referenced, as the arrays do not dynamically change their size.
      */
     public static HugeLongArray newArray(long size, AllocationTracker tracker) {
-        if (size <= SingleHugeLongArray.PAGE_SIZE) {
+        if (size <= PAGE_SIZE) {
             try {
                 return SingleHugeLongArray.of(size, tracker);
             } catch (OutOfMemoryError ignored) {
@@ -192,53 +200,6 @@ public abstract class HugeLongArray {
     }
 
     /**
-     * View of the underlying data, accessible as slices of {@code long[]} arrays.
-     * The values are from {@code array[offset]} (inclusive) until {@code array[limit]} (exclusive).
-     * The range might match complete array, but that isn't guaranteed.
-     * <p>
-     * The {@code limit} parameter does not have the same meaning as the {@code length} parameter that is used in many methods that can operate on array slices.
-     * The proper value would be {@code int length = limit - offset}.
-     */
-    public static abstract class Cursor implements AutoCloseable {
-
-        /**
-         * the base for the index to get the global index
-         */
-        public long base;
-        /**
-         * a slice of values currently being traversed
-         */
-        public long[] array;
-        /**
-         * the offset into the array
-         */
-        public int offset;
-        /**
-         * the limit of the array, exclusive – the first index not to be contained
-         */
-        public int limit;
-
-        Cursor() {
-        }
-
-        /**
-         * Try to load the next page and return the success of this load.
-         * Once the method returns {@code false}, this method will never return {@code true} again until the cursor is reset using {@link #cursor(Cursor)}.
-         * The cursor behavior is not defined and might be unusable and throw exceptions after this method returns {@code false}.
-         *
-         * @return true, iff the cursor is still valid on contains new data; false if there is no more data.
-         */
-        abstract public boolean next();
-
-        /**
-         * Releases the reference to the underlying array so that it might be garbage collected.
-         * The cursor can never be used again after calling this method, doing so results in undefined behavior.
-         */
-        @Override
-        abstract public void close();
-    }
-
-    /**
      * A {@link PropertyTranslator} for instances of {@link HugeLongArray}s.
      */
     public static class Translator implements PropertyTranslator.OfLong<HugeLongArray> {
@@ -253,11 +214,8 @@ public abstract class HugeLongArray {
 
     private static final class SingleHugeLongArray extends HugeLongArray {
 
-        private static final int PAGE_SHIFT = 30;
-        private static final int PAGE_SIZE = 1 << PAGE_SHIFT;
-
         private static HugeLongArray of(long size, AllocationTracker tracker) {
-            assert size <= PAGE_SIZE;
+            assert size <= SINGLE_PAGE_SIZE;
             final int intSize = (int) size;
             long[] page = new long[intSize];
 
@@ -362,71 +320,15 @@ public abstract class HugeLongArray {
         }
 
         @Override
-        public Cursor newCursor() {
-            return new SingleCursor(page);
-        }
-
-        @Override
-        public Cursor cursor(final Cursor cursor) {
-            assert cursor instanceof SingleCursor;
-            ((SingleCursor) cursor).init();
-            return cursor;
-        }
-
-        @Override
-        public Cursor cursor(final Cursor cursor, final long start, final long end) {
-            assert start >= 0L && start < (long) size : "start expected to be in (0, " + size + ") but got " + start;
-            assert end >= start && end <= (long) size : "end expected to be in (" + start + ", " + size + ") but got " + end;
-            assert cursor instanceof SingleCursor;
-            ((SingleCursor) cursor).init((int) start, (int) end);
-            return cursor;
-        }
-
-        private static final class SingleCursor extends Cursor {
-
-            private boolean exhausted;
-
-            private SingleCursor(final long[] page) {
-                super();
-                this.array = page;
-                this.base = 0L;
-            }
-
-            private void init() {
-                init(0, array.length);
-            }
-
-            private void init(int start, int end) {
-                exhausted = false;
-                offset = start;
-                limit = end;
-            }
-
-            public final boolean next() {
-                if (exhausted) {
-                    return false;
-                }
-                exhausted = true;
-                return true;
-            }
-
-            @Override
-            public void close() {
-                array = null;
-                limit = 0;
-                exhausted = true;
-            }
+        public HugeCursor<long[]> newCursor() {
+            return new HugeCursor.SinglePageCursor<>(page);
         }
     }
 
     private static final class PagedHugeLongArray extends HugeLongArray {
 
-        private static final int PAGE_SHIFT = 14;
-        private static final int PAGE_SIZE = 1 << PAGE_SHIFT;
-        private static final long PAGE_MASK = (long) (PAGE_SIZE - 1);
-
         private static HugeLongArray of(long size, AllocationTracker tracker) {
-            int numPages = PageUtil.numPagesFor(size, PAGE_SHIFT, PAGE_MASK);
+            int numPages = numberOfPages(size);
             long[][] pages = new long[numPages][];
 
             long memoryUsed = sizeOfObjectArray(numPages);
@@ -568,92 +470,8 @@ public abstract class HugeLongArray {
         }
 
         @Override
-        public Cursor newCursor() {
-            return new PagedCursor(size, pages);
-        }
-
-        @Override
-        public Cursor cursor(final Cursor cursor) {
-            assert cursor instanceof PagedCursor;
-            ((PagedCursor) cursor).init();
-            return cursor;
-        }
-
-        @Override
-        public Cursor cursor(final Cursor cursor, final long start, final long end) {
-            assert cursor instanceof PagedCursor;
-            ((PagedCursor) cursor).init(start, end);
-            return cursor;
-        }
-
-        private static int pageIndex(long index) {
-            return (int) (index >>> PAGE_SHIFT);
-        }
-
-        private static int indexInPage(long index) {
-            return (int) (index & PAGE_MASK);
-        }
-
-        private static int exclusiveIndexOfPage(long index) {
-            return 1 + (int) ((index - 1L) & PAGE_MASK);
-        }
-
-        private static final class PagedCursor extends Cursor {
-
-            private long[][] pages;
-            private int pageIndex;
-            private int fromPage;
-            private int maxPage;
-            private long capacity;
-            private long end;
-
-            private PagedCursor(final long capacity, final long[][] pages) {
-                super();
-                this.capacity = capacity;
-                this.pages = pages;
-            }
-
-            private void init() {
-                init(0L, capacity);
-            }
-
-            private void init(long start, long end) {
-                fromPage = pageIndex(start);
-                maxPage = pageIndex(end - 1L);
-                pageIndex = fromPage - 1;
-                this.end = end;
-                base = (long) fromPage << PAGE_SHIFT;
-                offset = indexInPage(start);
-                limit = fromPage == maxPage ? exclusiveIndexOfPage(end) : PAGE_SIZE;
-            }
-
-            public final boolean next() {
-                int current = ++pageIndex;
-                if (current > maxPage) {
-                    return false;
-                }
-                array = pages[current];
-                if (current == fromPage) {
-                    return true;
-                }
-                base += PAGE_SIZE;
-                offset = 0;
-                limit = current == maxPage ? exclusiveIndexOfPage(end) : array.length;
-                return true;
-            }
-
-            @Override
-            public void close() {
-                array = null;
-                pages = null;
-                base = 0L;
-                end = 0L;
-                limit = 0;
-                capacity = 0L;
-                maxPage = -1;
-                fromPage = -1;
-                pageIndex = -1;
-            }
+        public HugeCursor<long[]> newCursor() {
+            return new HugeCursor.PagedCursor<>(size, pages);
         }
     }
 }
