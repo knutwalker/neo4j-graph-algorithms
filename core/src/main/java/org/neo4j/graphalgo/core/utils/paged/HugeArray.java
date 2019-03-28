@@ -107,4 +107,51 @@ abstract class HugeArray<Array, Box, Self extends HugeArray<Array, Box, Self>> {
      */
     abstract public void boxedFill(Box value);
 
+    /**
+     * @return the contents of this array as a flat java primitive array.
+     *         The returned array might be shared and changes would then
+     *         be reflected and visible in this array.
+     * @throws IllegalStateException if the array is too large
+     */
+    abstract public Array toArray();
+
+    @Override
+    public String toString() {
+        if (size() == 0L) {
+            return "[]";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append('[');
+        try (HugeCursor<Array> cursor = cursor(newCursor())) {
+            while (cursor.next()) {
+                Array array = cursor.array;
+                for (int i = cursor.offset; i < cursor.limit; ++i) {
+                    sb.append(java.lang.reflect.Array.get(array, i)).append(", ");
+                }
+            }
+        }
+        sb.setLength(sb.length() - 1);
+        sb.setCharAt(sb.length() - 1, ']');
+        return sb.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    <T> T dumpToArray(final Class<?> componentClass) {
+        long fullSize = size();
+        if ((long) (int) fullSize != fullSize) {
+            throw new IllegalStateException("array with " + fullSize + " elements does not fit into a Java array");
+        }
+        int size = (int) fullSize;
+        Object result = java.lang.reflect.Array.newInstance(componentClass, size);
+        int pos = 0;
+        try (HugeCursor<Array> cursor = cursor(newCursor())) {
+            while (cursor.next()) {
+                Array array = cursor.array;
+                int length = cursor.limit - cursor.offset;
+                System.arraycopy(array, cursor.offset, result, pos, length);
+                pos += length;
+            }
+        }
+        return (T) result;
+    }
 }

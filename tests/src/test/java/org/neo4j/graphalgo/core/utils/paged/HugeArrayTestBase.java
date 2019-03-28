@@ -33,8 +33,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
+@SuppressWarnings("ImplicitNumericConversion")
 @ThreadLeakScope(ThreadLeakScope.Scope.NONE)
 public abstract class HugeArrayTestBase<Array, Box, Huge extends HugeArray<Array, Box, Huge>> extends RandomizedTest {
 
@@ -214,35 +214,9 @@ public abstract class HugeArrayTestBase<Array, Box, Huge extends HugeArray<Array
     }
 
     private void testCursorContent(int size, HugeCursor<Array> cursor) {
-        if (cursor.array instanceof int[]) {
-            int[] expected = new int[size];
-            Arrays.fill(expected, 42);
-            int[] actual = Arrays.copyOfRange((int[]) cursor.array, cursor.offset, cursor.limit);
-            assertArrayEquals(expected, actual);
-        }
-
-        else if (cursor.array instanceof long[]) {
-            long[] expected = new long[size];
-            Arrays.fill(expected, 42L);
-            long[] actual = Arrays.copyOfRange((long[]) cursor.array, cursor.offset, cursor.limit);
-            assertArrayEquals(expected, actual);
-        }
-
-        else if (cursor.array instanceof double[]) {
-            double[] expected = new double[size];
-            Arrays.fill(expected, 42D);
-            double[] actual = Arrays.copyOfRange((double[]) cursor.array, cursor.offset, cursor.limit);
-            assertArrayEquals(expected, actual, 1e-4);
-        }
-
-        else if (cursor.array instanceof String[]) {
-            String[] expected = (String[]) cursor.array;
-            Arrays.fill(expected, "42");
-            String[] actual = Arrays.copyOfRange((String[]) cursor.array, cursor.offset, cursor.limit);
-            assertArrayEquals(expected, actual);
-        }
-
-        else fail("Unsupported type under test " + cursor.array.getClass());
+        Box[] expected = newBoxedArray(size);
+        Arrays.fill(expected, box(42));
+        compareAgainst(cursor.array, cursor.offset, cursor.limit - cursor.offset, expected);
     }
 
     @Test
@@ -310,6 +284,7 @@ public abstract class HugeArrayTestBase<Array, Box, Huge extends HugeArray<Array
         testPartialMultiCursor(3 * PS, 3 * PS, 3 * PS);
     }
 
+    @SuppressWarnings("unchecked")
     private void testPartialMultiCursor(int size, int start, int end) {
         Huge array = pagedArray(size);
         array.boxedSetAll(i1 -> box(42 + (int) i1));
@@ -326,6 +301,7 @@ public abstract class HugeArrayTestBase<Array, Box, Huge extends HugeArray<Array
         assertEquals(expected, end + 42L);
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     public final void shouldHaveCursor() {
         int size = between(100_000, 200_000);
@@ -345,6 +321,30 @@ public abstract class HugeArrayTestBase<Array, Box, Huge extends HugeArray<Array
 
             long sum = ((long) size * (long) (size + 1)) / 2L;
             assertEquals(actual, sum);
+        });
+    }
+
+    @Test
+    public final void shouldHaveStringRepresentation() {
+        testArray(10, 20, (array, size) -> {
+            Object[] objects = new Object[size];
+            Arrays.setAll(objects, i -> box(i + 2));
+            String expected = Arrays.toString(objects);
+
+            array.boxedSetAll(i -> box((int) i + 2));
+            String actual = array.toString();
+            assertEquals(expected, actual);
+        });
+    }
+
+    @Test
+    public final void shouldHaveToArray() {
+        testArray(10, 20, (array, size) -> {
+            array.boxedSetAll(i -> box((int) i + 2));
+
+            Box[] expected = newBoxedArray(size);
+            Arrays.setAll(expected, i -> box(i + 2));
+            compareAgainst(array.toArray(), expected);
         });
     }
 
@@ -383,7 +383,42 @@ public abstract class HugeArrayTestBase<Array, Box, Huge extends HugeArray<Array
 
     abstract int unbox(Box value);
 
+    private void compareAgainst(Array array, Box[] expected) {
+        compareAgainst(array, 0, java.lang.reflect.Array.getLength(array), expected);
+    }
+
+    private void compareAgainst(Array array, int offset, int length, Box[] expected) {
+        if (array instanceof int[]) {
+            int[] e = Arrays.stream(expected).mapToInt(this::unbox).toArray();
+            int[] actual = Arrays.copyOfRange((int[]) array, offset, length - offset);
+            assertArrayEquals(e, actual);
+        }
+
+        else if (array instanceof long[]) {
+            long[] e = Arrays.stream(expected).mapToLong(this::unbox).toArray();
+            long[] actual = Arrays.copyOfRange((long[]) array, offset, length - offset);
+            assertArrayEquals(e, actual);
+        }
+
+        else if (array instanceof double[]) {
+            double[] e = Arrays.stream(expected).mapToDouble(this::unbox).toArray();
+            double[] actual = Arrays.copyOfRange((double[]) array, offset, length - offset);
+            assertArrayEquals(e, actual, 1e-4);
+        }
+
+        else if (array instanceof String[]) {
+            String[] e = Arrays.stream(expected).map(Object::toString).toArray(String[]::new);
+            String[] actual = Arrays.copyOfRange((String[]) array, offset, length - offset);
+            assertArrayEquals(e, actual);
+        }
+    }
+
     private int get(Huge array, int index) {
         return unbox(array.boxedGet((long) index));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Box[] newBoxedArray(final int size) {
+        return (Box[]) java.lang.reflect.Array.newInstance(box(42).getClass(), size);
     }
 }

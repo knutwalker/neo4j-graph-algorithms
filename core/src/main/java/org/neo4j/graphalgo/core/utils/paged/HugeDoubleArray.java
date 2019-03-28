@@ -135,7 +135,7 @@ public abstract class HugeDoubleArray extends HugeArray<double[], Double, HugeDo
      * {@inheritDoc}
      */
     @Override
-    public void boxedSet(final long index, final Double value) {
+    public final void boxedSet(final long index, final Double value) {
         set(index, value);
     }
 
@@ -143,7 +143,7 @@ public abstract class HugeDoubleArray extends HugeArray<double[], Double, HugeDo
      * {@inheritDoc}
      */
     @Override
-    public void boxedSetAll(final LongFunction<Double> gen) {
+    public final void boxedSetAll(final LongFunction<Double> gen) {
         setAll(gen::apply);
     }
 
@@ -151,8 +151,16 @@ public abstract class HugeDoubleArray extends HugeArray<double[], Double, HugeDo
      * {@inheritDoc}
      */
     @Override
-    public void boxedFill(final Double value) {
+    public final void boxedFill(final Double value) {
         fill(value);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public double[] toArray() {
+        return dumpToArray(Double.TYPE);
     }
 
     /**
@@ -170,6 +178,10 @@ public abstract class HugeDoubleArray extends HugeArray<double[], Double, HugeDo
             }
         }
         return PagedHugeDoubleArray.of(size, tracker);
+    }
+
+    public static HugeDoubleArray of(final double... values) {
+        return new HugeDoubleArray.SingleHugeDoubleArray(values.length, values);
     }
 
     /* test-only */
@@ -201,8 +213,6 @@ public abstract class HugeDoubleArray extends HugeArray<double[], Double, HugeDo
             assert size <= SINGLE_PAGE_SIZE;
             final int intSize = (int) size;
             double[] page = new double[intSize];
-
-            tracker.add(shallowSizeOfInstance(SingleHugeDoubleArray.class));
             tracker.add(sizeOfDoubleArray(intSize));
 
             return new SingleHugeDoubleArray(intSize, page);
@@ -294,6 +304,16 @@ public abstract class HugeDoubleArray extends HugeArray<double[], Double, HugeDo
         public HugeCursor<double[]> newCursor() {
             return new HugeCursor.SinglePageCursor<>(page);
         }
+
+        @Override
+        public double[] toArray() {
+            return page;
+        }
+
+        @Override
+        public String toString() {
+            return Arrays.toString(page);
+        }
     }
 
     private static final class PagedHugeDoubleArray extends HugeDoubleArray {
@@ -311,8 +331,6 @@ public abstract class HugeDoubleArray extends HugeArray<double[], Double, HugeDo
             final int lastPageSize = exclusiveIndexOfPage(size);
             pages[numPages - 1] = new double[lastPageSize];
             memoryUsed += sizeOfDoubleArray(lastPageSize);
-
-            tracker.add(shallowSizeOfInstance(PagedHugeDoubleArray.class));
             tracker.add(memoryUsed);
 
             return new PagedHugeDoubleArray(size, pages, memoryUsed);

@@ -151,7 +151,7 @@ public abstract class HugeIntArray extends HugeArray<int[], Integer, HugeIntArra
      * {@inheritDoc}
      */
     @Override
-    public void boxedSet(final long index, final Integer value) {
+    public final void boxedSet(final long index, final Integer value) {
         set(index, value);
     }
 
@@ -159,7 +159,7 @@ public abstract class HugeIntArray extends HugeArray<int[], Integer, HugeIntArra
      * {@inheritDoc}
      */
     @Override
-    public void boxedSetAll(final LongFunction<Integer> gen) {
+    public final void boxedSetAll(final LongFunction<Integer> gen) {
         setAll(gen::apply);
     }
 
@@ -167,8 +167,16 @@ public abstract class HugeIntArray extends HugeArray<int[], Integer, HugeIntArra
      * {@inheritDoc}
      */
     @Override
-    public void boxedFill(final Integer value) {
+    public final void boxedFill(final Integer value) {
         fill(value);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public int[] toArray() {
+        return dumpToArray(Integer.TYPE);
     }
 
     /**
@@ -186,6 +194,10 @@ public abstract class HugeIntArray extends HugeArray<int[], Integer, HugeIntArra
             }
         }
         return PagedHugeIntArray.of(size, tracker);
+    }
+
+    public static HugeIntArray of(final int... values) {
+        return new HugeIntArray.SingleHugeIntArray(values.length, values);
     }
 
     /* test-only */
@@ -217,8 +229,6 @@ public abstract class HugeIntArray extends HugeArray<int[], Integer, HugeIntArra
             assert size <= SINGLE_PAGE_SIZE;
             final int intSize = (int) size;
             int[] page = new int[intSize];
-
-            tracker.add(shallowSizeOfInstance(SingleHugeIntArray.class));
             tracker.add(sizeOfIntArray(intSize));
 
             return new SingleHugeIntArray(intSize, page);
@@ -322,6 +332,16 @@ public abstract class HugeIntArray extends HugeArray<int[], Integer, HugeIntArra
         public HugeCursor<int[]> newCursor() {
             return new HugeCursor.SinglePageCursor<>(page);
         }
+
+        @Override
+        public int[] toArray() {
+            return page;
+        }
+
+        @Override
+        public String toString() {
+            return Arrays.toString(page);
+        }
     }
 
     private static final class PagedHugeIntArray extends HugeIntArray {
@@ -339,8 +359,6 @@ public abstract class HugeIntArray extends HugeArray<int[], Integer, HugeIntArra
             final int lastPageSize = exclusiveIndexOfPage(size);
             pages[numPages - 1] = new int[lastPageSize];
             memoryUsed += sizeOfIntArray(lastPageSize);
-
-            tracker.add(shallowSizeOfInstance(PagedHugeIntArray.class));
             tracker.add(memoryUsed);
 
             return new PagedHugeIntArray(size, pages, memoryUsed);

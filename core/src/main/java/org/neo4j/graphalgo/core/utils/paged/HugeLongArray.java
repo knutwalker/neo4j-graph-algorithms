@@ -152,7 +152,7 @@ public abstract class HugeLongArray extends HugeArray<long[], Long, HugeLongArra
      * {@inheritDoc}
      */
     @Override
-    public void boxedSet(final long index, final Long value) {
+    public final void boxedSet(final long index, final Long value) {
         set(index, value);
     }
 
@@ -160,7 +160,7 @@ public abstract class HugeLongArray extends HugeArray<long[], Long, HugeLongArra
      * {@inheritDoc}
      */
     @Override
-    public void boxedSetAll(final LongFunction<Long> gen) {
+    public final void boxedSetAll(final LongFunction<Long> gen) {
         setAll(gen::apply);
     }
 
@@ -168,8 +168,16 @@ public abstract class HugeLongArray extends HugeArray<long[], Long, HugeLongArra
      * {@inheritDoc}
      */
     @Override
-    public void boxedFill(final Long value) {
+    public final void boxedFill(final Long value) {
         fill(value);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public long[] toArray() {
+        return dumpToArray(Long.TYPE);
     }
 
     /**
@@ -187,6 +195,10 @@ public abstract class HugeLongArray extends HugeArray<long[], Long, HugeLongArra
             }
         }
         return PagedHugeLongArray.of(size, tracker);
+    }
+
+    public static HugeLongArray of(final long... values) {
+        return new SingleHugeLongArray(values.length, values);
     }
 
     /* test-only */
@@ -218,8 +230,6 @@ public abstract class HugeLongArray extends HugeArray<long[], Long, HugeLongArra
             assert size <= SINGLE_PAGE_SIZE;
             final int intSize = (int) size;
             long[] page = new long[intSize];
-
-            tracker.add(shallowSizeOfInstance(HugeLongArray.class));
             tracker.add(sizeOfLongArray(intSize));
 
             return new SingleHugeLongArray(intSize, page);
@@ -323,6 +333,16 @@ public abstract class HugeLongArray extends HugeArray<long[], Long, HugeLongArra
         public HugeCursor<long[]> newCursor() {
             return new HugeCursor.SinglePageCursor<>(page);
         }
+
+        @Override
+        public String toString() {
+            return Arrays.toString(page);
+        }
+
+        @Override
+        public long[] toArray() {
+            return page;
+        }
     }
 
     private static final class PagedHugeLongArray extends HugeLongArray {
@@ -340,8 +360,6 @@ public abstract class HugeLongArray extends HugeArray<long[], Long, HugeLongArra
             final int lastPageSize = exclusiveIndexOfPage(size);
             pages[numPages - 1] = new long[lastPageSize];
             memoryUsed += sizeOfLongArray(lastPageSize);
-
-            tracker.add(shallowSizeOfInstance(HugeLongArray.class));
             tracker.add(memoryUsed);
 
             return new PagedHugeLongArray(size, pages, memoryUsed);

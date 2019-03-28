@@ -22,6 +22,7 @@ import java.lang.reflect.Array;
 import java.util.Arrays;
 import java.util.function.IntFunction;
 import java.util.function.LongFunction;
+import java.util.function.Supplier;
 
 import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.PAGE_SHIFT;
 import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.PAGE_SIZE;
@@ -75,6 +76,17 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
     abstract public void set(long index, T value);
 
     /**
+     * If the value at the given index is {@code null}, attempts to compute its value using
+     * the given supplier and enters it into this array unless {@code null}.
+     *
+     * @param index index at which the specified value is to be associated
+     * @return the current (existing or computed) value associated with
+     *         the specified index, or null if the computed value is null
+     * @throws ArrayIndexOutOfBoundsException if the index is not within {@link #size()}
+     */
+    abstract public T putIfAbsent(long index, Supplier<T> supplier);
+
+    /**
      * Set all elements using the provided generator function to compute each element.
      * <p>
      * The behavior is identical to {@link Arrays#setAll(Object[], IntFunction)}.
@@ -124,7 +136,7 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
      * {@inheritDoc}
      */
     @Override
-    public void boxedSet(final long index, final T value) {
+    public final void boxedSet(final long index, final T value) {
         set(index, value);
     }
 
@@ -132,7 +144,7 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
      * {@inheritDoc}
      */
     @Override
-    public void boxedSetAll(final LongFunction<T> gen) {
+    public final void boxedSetAll(final LongFunction<T> gen) {
         setAll(gen);
     }
 
@@ -140,9 +152,15 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
      * {@inheritDoc}
      */
     @Override
-    public void boxedFill(final T value) {
+    public final void boxedFill(final T value) {
         fill(value);
     }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    abstract public T[] toArray();
 
     /**
      * Creates a new array if the given size, tracking the memory requirements into the given {@link AllocationTracker}.
@@ -159,6 +177,11 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
             }
         }
         return PagedHugeObjectArray.of(componentClass, size, tracker);
+    }
+
+    @SafeVarargs
+    public static <T> HugeObjectArray of(final T... values) {
+        return new HugeObjectArray.SingleHugeObjectArray<>(values.length, values);
     }
 
     /* test-only */
@@ -178,8 +201,6 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
             final int intSize = (int) size;
             //noinspection unchecked
             T[] page = (T[]) Array.newInstance(componentClass, intSize);
-
-            tracker.add(shallowSizeOfInstance(SingleHugeObjectArray.class));
             tracker.add(sizeOfObjectArray(intSize));
 
             return new SingleHugeObjectArray<>(intSize, page);
@@ -203,6 +224,18 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
         public void set(long index, T value) {
             assert index < size;
             page[(int) index] = value;
+        }
+
+        @Override
+        public T putIfAbsent(long index, Supplier<T> supplier) {
+            assert index < size;
+            T value;
+            if ((value = page[(int) index]) == null) {
+                if ((value = supplier.get()) != null) {
+                    page[(int) index] = value;
+                }
+            }
+            return value;
         }
 
         @Override
@@ -265,6 +298,16 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
         public HugeCursor<T[]> newCursor() {
             return new HugeCursor.SinglePageCursor<>(page);
         }
+
+        @Override
+        public T[] toArray() {
+            return page;
+        }
+
+        @Override
+        public String toString() {
+            return Arrays.toString(page);
+        }
     }
 
     private static final class PagedHugeObjectArray<T> extends HugeObjectArray<T> {
@@ -280,8 +323,6 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
             final int lastPageSize = exclusiveIndexOfPage(size);
             pages[numPages - 1] = (T[]) Array.newInstance(componentClass, lastPageSize);
             memoryUsed += sizeOfObjectArray(lastPageSize);
-
-            tracker.add(shallowSizeOfInstance(PagedHugeObjectArray.class));
             tracker.add(memoryUsed);
 
             return new PagedHugeObjectArray<>(size, pages, memoryUsed);
@@ -311,6 +352,21 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
             final int pageIndex = pageIndex(index);
             final int indexInPage = indexInPage(index);
             pages[pageIndex][indexInPage] = value;
+        }
+
+        @Override
+        public T putIfAbsent(final long index, final Supplier<T> supplier) {
+            assert index < size;
+            final int pageIndex = pageIndex(index);
+            final int indexInPage = indexInPage(index);
+            T[] page = pages[pageIndex];
+            T value;
+            if ((value = page[indexInPage]) == null) {
+                if ((value = supplier.get()) != null) {
+                    page[indexInPage] = value;
+                }
+            }
+            return value;
         }
 
         @Override
@@ -388,6 +444,11 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
         @Override
         public HugeCursor<T[]> newCursor() {
             return new HugeCursor.PagedCursor<>(size, pages);
+        }
+
+        @Override
+        public T[] toArray() {
+            return dumpToArray(pages.getClass().getComponentType().getComponentType());
         }
     }
 }
