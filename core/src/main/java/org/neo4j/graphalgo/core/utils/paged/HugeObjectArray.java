@@ -31,7 +31,6 @@ import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.exclusiveIndexOfPa
 import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.indexInPage;
 import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.numberOfPages;
 import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.pageIndex;
-import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.shallowSizeOfInstance;
 import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfObjectArray;
 
 /**
@@ -446,9 +445,10 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
             return new HugeCursor.PagedCursor<>(size, pages);
         }
 
+        @SuppressWarnings("unchecked")
         @Override
         public T[] toArray() {
-            return dumpToArray(pages.getClass().getComponentType().getComponentType());
+            return dumpToArray((Class<T[]>) pages.getClass().getComponentType());
         }
     }
 }

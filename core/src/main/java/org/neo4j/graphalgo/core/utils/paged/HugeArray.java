@@ -136,13 +136,13 @@ abstract class HugeArray<Array, Box, Self extends HugeArray<Array, Box, Self>> {
     }
 
     @SuppressWarnings("unchecked")
-    <T> T dumpToArray(final Class<?> componentClass) {
+    Array dumpToArray(final Class<Array> componentClass) {
         long fullSize = size();
         if ((long) (int) fullSize != fullSize) {
             throw new IllegalStateException("array with " + fullSize + " elements does not fit into a Java array");
         }
         int size = (int) fullSize;
-        Object result = java.lang.reflect.Array.newInstance(componentClass, size);
+        Object result = java.lang.reflect.Array.newInstance(componentClass.getComponentType(), size);
         int pos = 0;
         try (HugeCursor<Array> cursor = cursor(newCursor())) {
             while (cursor.next()) {
@@ -152,6 +152,6 @@ abstract class HugeArray<Array, Box, Self extends HugeArray<Array, Box, Self>> {
                 pos += length;
             }
         }
-        return (T) result;
+        return (Array) result;
     }
 }

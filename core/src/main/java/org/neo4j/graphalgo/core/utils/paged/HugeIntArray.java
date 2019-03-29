@@ -176,7 +176,7 @@ public abstract class HugeIntArray extends HugeArray<int[], Integer, HugeIntArra
      */
     @Override
     public int[] toArray() {
-        return dumpToArray(Integer.TYPE);
+        return dumpToArray(int[].class);
     }
 
     /**

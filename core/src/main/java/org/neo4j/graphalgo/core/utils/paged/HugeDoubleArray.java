@@ -160,7 +160,7 @@ public abstract class HugeDoubleArray extends HugeArray<double[], Double, HugeDo
      */
     @Override
     public double[] toArray() {
-        return dumpToArray(Double.TYPE);
+        return dumpToArray(double[].class);
     }
 
     /**

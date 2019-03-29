@@ -177,7 +177,7 @@ public abstract class HugeLongArray extends HugeArray<long[], Long, HugeLongArra
      */
     @Override
     public long[] toArray() {
-        return dumpToArray(Long.TYPE);
+        return dumpToArray(long[].class);
     }
 
     /**
