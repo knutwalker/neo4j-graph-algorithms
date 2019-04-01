@@ -24,7 +24,7 @@ import static org.junit.Assert.assertSame;
 
 public final class ParallelUnionFindQueueTest {
 
-    @Test
+    @Test(timeout = 2000L)
     public void testQueueSafetyUnderFailure() {
         IllegalStateException error = new IllegalStateException("some error");
         FlakyGraph graph = new FlakyGraph(100, 10, new Random(42L), error);
@@ -41,7 +41,7 @@ public final class ParallelUnionFindQueueTest {
         }
     }
 
-    @Test
+    @Test(timeout = 2000L)
     public void testHugeQueueSafetyUnderFailure() {
         IllegalStateException error = new IllegalStateException("some error");
         FlakyGraph graph = new FlakyGraph(100, 10, new Random(42L), error);
