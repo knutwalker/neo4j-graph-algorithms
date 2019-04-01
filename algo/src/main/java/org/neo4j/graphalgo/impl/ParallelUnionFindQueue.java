@@ -105,14 +105,22 @@ public class ParallelUnionFindQueue extends GraphUnionFindAlgo<Graph, DisjointSe
             afterMerge = available - 1;
         } while (!expected.compareAndSet(available, afterMerge));
 
+        boolean pushed = false;
         try {
-            final T a = queue.take();
-            final T b = queue.take();
-            final T next = merge.apply(a, b);
-            queue.add(next);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException(e);
+            try {
+                final T a = queue.take();
+                final T b = queue.take();
+                final T next = merge.apply(a, b);
+                queue.add(next);
+                pushed = true;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+        } finally {
+            if (!pushed) {
+                expected.decrementAndGet();
+            }
         }
     }
 
