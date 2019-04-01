@@ -1,8 +1,11 @@
 package org.neo4j.graphalgo.impl;
 
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.neo4j.collection.primitive.PrimitiveLongIterable;
 import org.neo4j.collection.primitive.PrimitiveLongIterator;
+import org.neo4j.graphalgo.api.Graph;
 import org.neo4j.graphalgo.api.HugeGraph;
 import org.neo4j.graphalgo.api.HugeRelationshipConsumer;
 import org.neo4j.graphalgo.api.HugeWeightMapping;
@@ -13,7 +16,9 @@ import org.neo4j.graphalgo.api.WeightedRelationshipConsumer;
 import org.neo4j.graphalgo.core.utils.Pools;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphdb.Direction;
+import org.neo4j.helpers.Exceptions;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Random;
 import java.util.Set;
@@ -22,40 +27,51 @@ import java.util.stream.IntStream;
 
 import static org.junit.Assert.assertSame;
 
-public final class ParallelUnionFindQueueTest {
+@RunWith(Parameterized.class)
+public final class UnionFindSafetyTest {
+
+    @Parameterized.Parameters(name = "{0}")
+    public static Collection<Object[]> data() {
+        return Arrays.asList(
+                new Object[]{UnionFindAlgo.QUEUE},
+                new Object[]{UnionFindAlgo.FORK_JOIN},
+                new Object[]{UnionFindAlgo.FJ_MERGE}
+        );
+    }
+
+    @Parameterized.Parameter
+    public UnionFindAlgo unionFindAlgo;
 
     @Test(timeout = 2000L)
-    public void testQueueSafetyUnderFailure() {
+    public void testUnionFindSafetyUnderFailure() {
         IllegalStateException error = new IllegalStateException("some error");
-        FlakyGraph graph = new FlakyGraph(100, 10, new Random(42L), error);
-        ParallelUnionFindQueue uf = new ParallelUnionFindQueue(
-                graph,
-                Pools.DEFAULT,
-                10,
-                10
-        );
+        Graph graph = new FlakyGraph(100, 10, new Random(42L), error);
         try {
-            uf.compute();
-        } catch (IllegalStateException e) {
-            assertSame(error, e);
+            unionFindAlgo.run(
+                    graph,
+                    Pools.DEFAULT,
+                    10,
+                    10
+            );
+        } catch (Throwable e) {
+            assertSame(error, Exceptions.rootCause(e));
         }
     }
 
     @Test(timeout = 2000L)
-    public void testHugeQueueSafetyUnderFailure() {
+    public void testHugeUnionFindSafetyUnderFailure() {
         IllegalStateException error = new IllegalStateException("some error");
-        FlakyGraph graph = new FlakyGraph(100, 10, new Random(42L), error);
-        HugeParallelUnionFindQueue uf = new HugeParallelUnionFindQueue(
-                graph,
-                Pools.DEFAULT,
-                10,
-                10,
-                AllocationTracker.EMPTY
-        );
+        HugeGraph graph = new FlakyGraph(100, 10, new Random(42L), error);
         try {
-            uf.compute();
+            unionFindAlgo.run(
+                    graph,
+                    Pools.DEFAULT,
+                    AllocationTracker.EMPTY,
+                    10,
+                    10
+            );
         } catch (IllegalStateException e) {
-            assertSame(error, e);
+            assertSame(error, Exceptions.rootCause(e));
         }
     }
 
@@ -78,7 +94,7 @@ public final class ParallelUnionFindQueueTest {
 
         @Override
         public long nodeCount() {
-            return nodes;
+            return (long) nodes;
         }
 
         @Override
@@ -86,17 +102,17 @@ public final class ParallelUnionFindQueueTest {
                 final long nodeId,
                 final Direction direction,
                 final HugeRelationshipConsumer consumer) {
-            if (nodeId == 0) {
+            if (nodeId == 0L) {
                 throw error;
             }
             int degree = random.nextInt(maxDegree);
             int[] targets = IntStream.range(0, degree)
                     .map(i -> random.nextInt(nodes))
-                    .filter(i -> i != nodeId)
+                    .filter(i -> (long) i != nodeId)
                     .distinct()
                     .toArray();
             for (int target : targets) {
-                if (!consumer.accept(nodeId, target)) {
+                if (!consumer.accept(nodeId, (long) target)) {
                     break;
                 }
             }
@@ -113,37 +129,37 @@ public final class ParallelUnionFindQueueTest {
         @Override
         public RelationshipIntersect intersection() {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.intersection is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.intersection is not implemented.");
         }
 
         @Override
         public Collection<PrimitiveLongIterable> hugeBatchIterables(final int batchSize) {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.hugeBatchIterables is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.hugeBatchIterables is not implemented.");
         }
 
         @Override
         public int degree(final long nodeId, final Direction direction) {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.degree is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.degree is not implemented.");
         }
 
         @Override
         public long toHugeMappedNodeId(final long nodeId) {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.toHugeMappedNodeId is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.toHugeMappedNodeId is not implemented.");
         }
 
         @Override
         public long toOriginalNodeId(final long nodeId) {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.toOriginalNodeId is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.toOriginalNodeId is not implemented.");
         }
 
         @Override
         public boolean contains(final long nodeId) {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.contains is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.contains is not implemented.");
         }
 
         @Override
@@ -154,19 +170,19 @@ public final class ParallelUnionFindQueueTest {
         @Override
         public PrimitiveLongIterator hugeNodeIterator() {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.hugeNodeIterator is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.hugeNodeIterator is not implemented.");
         }
 
         @Override
         public HugeWeightMapping hugeNodeProperties(final String type) {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.hugeNodeProperties is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.hugeNodeProperties is not implemented.");
         }
 
         @Override
         public long getTarget(final long nodeId, final long index, final Direction direction) {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.getTarget is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.getTarget is not implemented.");
         }
 
         @Override
@@ -178,31 +194,31 @@ public final class ParallelUnionFindQueueTest {
         @Override
         public boolean exists(final long sourceNodeId, final long targetNodeId, final Direction direction) {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.exists is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.exists is not implemented.");
         }
 
         @Override
         public double weightOf(final long sourceNodeId, final long targetNodeId) {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.weightOf is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.weightOf is not implemented.");
         }
 
         @Override
         public Set<String> availableNodeProperties() {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.availableNodeProperties is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.availableNodeProperties is not implemented.");
         }
 
         @Override
         public int getTarget(final int nodeId, final int index, final Direction direction) {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.getTarget is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.getTarget is not implemented.");
         }
 
         @Override
         public boolean exists(final int sourceNodeId, final int targetNodeId, final Direction direction) {
             throw new UnsupportedOperationException(
-                    "org.neo4j.graphalgo.impl.ParallelUnionFindQueueTest.FlakyGraph.exists is not implemented.");
+                    "org.neo4j.graphalgo.impl.UnionFindSafetyTest.FlakyGraph.exists is not implemented.");
         }
 
         @Override
