@@ -70,7 +70,7 @@ public final class UnionFindSafetyTest {
                     10,
                     10
             );
-        } catch (IllegalStateException e) {
+        } catch (Throwable e) {
             assertSame(error, Exceptions.rootCause(e));
         }
     }
