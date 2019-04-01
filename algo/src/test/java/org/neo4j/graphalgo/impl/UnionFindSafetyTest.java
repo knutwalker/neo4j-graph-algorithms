@@ -42,7 +42,7 @@ public final class UnionFindSafetyTest {
     @Parameterized.Parameter
     public UnionFindAlgo unionFindAlgo;
 
-    @Test(timeout = 2000L)
+    @Test(timeout = 10_000L)
     public void testUnionFindSafetyUnderFailure() {
         IllegalStateException error = new IllegalStateException("some error");
         Graph graph = new FlakyGraph(100, 10, new Random(42L), error);
@@ -58,7 +58,7 @@ public final class UnionFindSafetyTest {
         }
     }
 
-    @Test(timeout = 2000L)
+    @Test(timeout = 10_000L)
     public void testHugeUnionFindSafetyUnderFailure() {
         IllegalStateException error = new IllegalStateException("some error");
         HugeGraph graph = new FlakyGraph(100, 10, new Random(42L), error);
