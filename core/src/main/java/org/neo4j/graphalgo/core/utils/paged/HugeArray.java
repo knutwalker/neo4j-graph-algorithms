@@ -55,7 +55,7 @@ abstract class HugeArray<Array, Box, Self extends HugeArray<Array, Box, Self>> {
      * might result in a {@link NullPointerException} or another {@link RuntimeException}.
      */
     final public HugeCursor<Array> cursor(HugeCursor<Array> cursor) {
-        cursor.init();
+        cursor.setRange();
         return cursor;
     }
 
@@ -76,7 +76,7 @@ abstract class HugeArray<Array, Box, Self extends HugeArray<Array, Box, Self>> {
     final public HugeCursor<Array> cursor(HugeCursor<Array> cursor, long start, long end) {
         assert start >= 0L && start <= size() : "start expected to be in [0 : " + size() + "] but got " + start;
         assert end >= start && end <= size() : "end expected to be in [" + start + " : " + size() + "] but got " + end;
-        cursor.init(start, end);
+        cursor.setRange(start, end);
         return cursor;
     }
 

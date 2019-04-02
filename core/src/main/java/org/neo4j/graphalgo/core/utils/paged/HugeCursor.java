@@ -56,12 +56,12 @@ public abstract class HugeCursor<Array> implements AutoCloseable {
     /**
      * initializes cursor from 0 to capacity
      */
-    abstract void init();
+    abstract void setRange();
 
     /**
      * initializes cursor from start to end
      */
-    abstract void init(long start, long end);
+    abstract void setRange(long start, long end);
 
 
     static final class SinglePageCursor<Array> extends HugeCursor<Array> {
@@ -75,16 +75,16 @@ public abstract class HugeCursor<Array> implements AutoCloseable {
         }
 
         @Override
-        void init() {
-            init(0, getLength(array));
+        void setRange() {
+            setRange(0, getLength(array));
         }
 
         @Override
-        void init(final long start, final long end) {
-            init((int) start, (int) end);
+        void setRange(final long start, final long end) {
+            setRange((int) start, (int) end);
         }
 
-        private void init(int start, int end) {
+        private void setRange(int start, int end) {
             exhausted = false;
             offset = start;
             limit = end;
@@ -123,12 +123,12 @@ public abstract class HugeCursor<Array> implements AutoCloseable {
         }
 
         @Override
-        void init() {
-            init(0L, capacity);
+        void setRange() {
+            setRange(0L, capacity);
         }
 
         @Override
-        void init(long start, long end) {
+        void setRange(long start, long end) {
             fromPage = pageIndex(start);
             maxPage = pageIndex(end - 1L);
             pageIndex = fromPage - 1;
