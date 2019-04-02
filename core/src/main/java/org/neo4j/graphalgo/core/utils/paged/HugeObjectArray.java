@@ -36,13 +36,12 @@ import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfObjectArray
 /**
  * A long-indexable version of a Object array ({@code T[]}) that can contain more than 2 bn. elements.
  * <p>
- * It is implemented by paging of smaller int-arrays ({@code T[][]}) to support approx. 32k bn. elements.
+ * It is implemented by paging of smaller object-arrays ({@code T[][]}) to support approx. 32k bn. elements.
  * If the the provided size is small enough, an optimized view of a single {@code T[]} might be used.
  * <p>
  * <ul>
  * <li>The array is of a fixed size and cannot grow or shrink dynamically.</li>
- * <li>The array is not optimized for sparseness and has a large memory overhead if the values written to it are very sparse (see {@link SparseLongArray} for a different implementation that can profit from sparse data).</li>
- * <li>The array does not support default values and returns the same default for unset values that a regular {@code T[]} does ({@code 0}).</li>
+ * <li>The array does not support default values and returns the same default for unset values that a regular {@code T[]} does ({@code null}).</li>
  * </ul>
  * <p>
  * <h3>Basic Usage</h3>
@@ -50,10 +49,10 @@ import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfObjectArray
  * {@code}
  * AllocationTracker tracker = ...;
  * long arraySize = 42L;
- * HugeIntArray array = HugeIntArray.newArray(arraySize, tracker);
- * array.set(13L, 37);
- * int value = array.get(13L);
- * // value = 37
+ * HugeObjectArray&lt;String&gt; array = HugeObjectArray.newArray(String.class, arraySize, tracker);
+ * array.set(13L, "37");
+ * String value = array.get(13L);
+ * // value = "37"
  * {@code}
  * </pre>
  *
