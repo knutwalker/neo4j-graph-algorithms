@@ -31,7 +31,6 @@ import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.exclusiveIndexOfPa
 import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.indexInPage;
 import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.numberOfPages;
 import static org.neo4j.graphalgo.core.utils.paged.HugeArrays.pageIndex;
-import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.shallowSizeOfInstance;
 import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfIntArray;
 import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfObjectArray;
 
@@ -185,13 +184,7 @@ public abstract class HugeIntArray extends HugeArray<int[], Integer, HugeIntArra
      */
     public static HugeIntArray newArray(long size, AllocationTracker tracker) {
         if (size <= SINGLE_PAGE_SIZE) {
-            try {
-                return SingleHugeIntArray.of(size, tracker);
-            } catch (OutOfMemoryError ignored) {
-                // OOM is very likely because we just tried to create a single array that is too large
-                // in which case we're just going the paged way. If the OOM had any other reason, we're
-                // probably triggering it again in the construction of the paged array, where it will be thrown.
-            }
+            return SingleHugeIntArray.of(size, tracker);
         }
         return PagedHugeIntArray.of(size, tracker);
     }

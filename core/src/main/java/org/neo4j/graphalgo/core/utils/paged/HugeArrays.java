@@ -2,7 +2,7 @@ package org.neo4j.graphalgo.core.utils.paged;
 
 final class HugeArrays {
 
-    private static final int SINGLE_PAGE_SHIFT = 30;
+    private static final int SINGLE_PAGE_SHIFT = 28;
     static final int SINGLE_PAGE_SIZE = 1 << SINGLE_PAGE_SHIFT;
 
     static final int PAGE_SHIFT = 14;
