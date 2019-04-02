@@ -22,4 +22,7 @@ public final class NewHugeArrays {
     public static HugeLongArray newPagedArray(long size, AllocationTracker tracker) {
         return HugeLongArray.newPagedArray(size, tracker);
     }
+    public static HugeLongArray newSingleArray(int size, AllocationTracker tracker) {
+        return HugeLongArray.newSingleArray(size, tracker);
+    }
 }
