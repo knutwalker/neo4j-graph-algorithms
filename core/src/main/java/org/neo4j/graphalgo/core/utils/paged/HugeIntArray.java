@@ -142,7 +142,7 @@ public abstract class HugeIntArray extends HugeArray<int[], Integer, HugeIntArra
      * {@inheritDoc}
      */
     @Override
-    public final Integer boxedGet(final long index) {
+    final Integer boxedGet(final long index) {
         return get(index);
     }
 
@@ -150,7 +150,7 @@ public abstract class HugeIntArray extends HugeArray<int[], Integer, HugeIntArra
      * {@inheritDoc}
      */
     @Override
-    public final void boxedSet(final long index, final Integer value) {
+    final void boxedSet(final long index, final Integer value) {
         set(index, value);
     }
 
@@ -158,7 +158,7 @@ public abstract class HugeIntArray extends HugeArray<int[], Integer, HugeIntArra
      * {@inheritDoc}
      */
     @Override
-    public final void boxedSetAll(final LongFunction<Integer> gen) {
+    final void boxedSetAll(final LongFunction<Integer> gen) {
         setAll(gen::apply);
     }
 
@@ -166,7 +166,7 @@ public abstract class HugeIntArray extends HugeArray<int[], Integer, HugeIntArra
      * {@inheritDoc}
      */
     @Override
-    public final void boxedFill(final Integer value) {
+    final void boxedFill(final Integer value) {
         fill(value);
     }
 

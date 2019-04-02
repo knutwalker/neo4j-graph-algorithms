@@ -84,28 +84,28 @@ abstract class HugeArray<Array, Box, Self extends HugeArray<Array, Box, Self>> {
      * @return the value at the given index
      * @throws ArrayIndexOutOfBoundsException if the index is not within {@link #size()}
      */
-    abstract public Box boxedGet(long index);
+    abstract Box boxedGet(long index);
 
     /**
      * Sets the value at the given index to the given value.
      *
      * @throws ArrayIndexOutOfBoundsException if the index is not within {@link #size()}
      */
-    abstract public void boxedSet(long index, Box value);
+    abstract void boxedSet(long index, Box value);
 
     /**
      * Set all elements using the provided generator function to compute each element.
      * <p>
      * The behavior is identical to {@link Arrays#setAll(int[], java.util.function.IntUnaryOperator)}.
      */
-    abstract public void boxedSetAll(LongFunction<Box> gen);
+    abstract void boxedSetAll(LongFunction<Box> gen);
 
     /**
      * Assigns the specified value to each element.
      * <p>
      * The behavior is identical to {@link Arrays#fill(int[], int)}.
      */
-    abstract public void boxedFill(Box value);
+    abstract void boxedFill(Box value);
 
     /**
      * @return the contents of this array as a flat java primitive array.

@@ -127,7 +127,7 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
      * {@inheritDoc}
      */
     @Override
-    public final T boxedGet(final long index) {
+    final T boxedGet(final long index) {
         return get(index);
     }
 
@@ -135,7 +135,7 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
      * {@inheritDoc}
      */
     @Override
-    public final void boxedSet(final long index, final T value) {
+    final void boxedSet(final long index, final T value) {
         set(index, value);
     }
 
@@ -143,7 +143,7 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
      * {@inheritDoc}
      */
     @Override
-    public final void boxedSetAll(final LongFunction<T> gen) {
+    final void boxedSetAll(final LongFunction<T> gen) {
         setAll(gen);
     }
 
@@ -151,7 +151,7 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
      * {@inheritDoc}
      */
     @Override
-    public final void boxedFill(final T value) {
+    final void boxedFill(final T value) {
         fill(value);
     }
 

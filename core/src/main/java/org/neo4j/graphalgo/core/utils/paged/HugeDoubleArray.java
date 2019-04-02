@@ -126,7 +126,7 @@ public abstract class HugeDoubleArray extends HugeArray<double[], Double, HugeDo
      * {@inheritDoc}
      */
     @Override
-    public final Double boxedGet(final long index) {
+    final Double boxedGet(final long index) {
         return get(index);
     }
 
@@ -134,7 +134,7 @@ public abstract class HugeDoubleArray extends HugeArray<double[], Double, HugeDo
      * {@inheritDoc}
      */
     @Override
-    public final void boxedSet(final long index, final Double value) {
+    final void boxedSet(final long index, final Double value) {
         set(index, value);
     }
 
@@ -142,7 +142,7 @@ public abstract class HugeDoubleArray extends HugeArray<double[], Double, HugeDo
      * {@inheritDoc}
      */
     @Override
-    public final void boxedSetAll(final LongFunction<Double> gen) {
+    final void boxedSetAll(final LongFunction<Double> gen) {
         setAll(gen::apply);
     }
 
@@ -150,7 +150,7 @@ public abstract class HugeDoubleArray extends HugeArray<double[], Double, HugeDo
      * {@inheritDoc}
      */
     @Override
-    public final void boxedFill(final Double value) {
+    final void boxedFill(final Double value) {
         fill(value);
     }
 
