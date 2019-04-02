@@ -76,17 +76,24 @@ final class EigenvectorCentralityComputeStep extends BaseComputeStep implements 
     }
 
     @Override
-    void synchronizeScores(float[] allScores) {
+    void combineScores() {
+        assert prevScores != null;
+        assert prevScores.length >= 1;
+
         double[] pageRank = this.pageRank;
+        double[] deltas = this.deltas;
+        float[][] prevScores = this.prevScores;
+        int length = prevScores[0].length;
 
-        int length = allScores.length;
         for (int i = 0; i < length; i++) {
-            double sum = (double) allScores[i];
-            pageRank[i] += sum;
-            deltas[i] = sum;
-            allScores[i] = 0f;
+            double delta = 0.0;
+            for (float[] scores : prevScores) {
+                delta += (double) scores[i];
+                scores[i] = 0f;
+            }
+            pageRank[i] += delta;
+            deltas[i] = delta;
         }
-
     }
 
     @Override

@@ -42,7 +42,7 @@ public abstract class BaseComputeStep implements ComputeStep {
     double[] pageRank;
     double[] deltas;
     float[][] nextScores;
-    private float[][] prevScores;
+    float[][] prevScores;
 
     final int partitionSize;
     final int startNode;
@@ -76,7 +76,7 @@ public abstract class BaseComputeStep implements ComputeStep {
             singleIteration();
             state = S_SYNC;
         } else if (state == S_SYNC) {
-            synchronizeScores(combineScores());
+            combineScores();
             state = S_NORM;
         } else if(state == S_NORM) {
             normalizeDeltas();
@@ -130,36 +130,25 @@ public abstract class BaseComputeStep implements ComputeStep {
         this.prevScores = prevScores;
     }
 
-    private float[] combineScores() {
+    void combineScores() {
         assert prevScores != null;
         assert prevScores.length >= 1;
-        float[][] prevScores = this.prevScores;
 
-        int length = prevScores.length;
-        float[] allScores = prevScores[0];
-        for (int i = 1; i < length; i++) {
-            float[] scores = prevScores[i];
-            for (int j = 0; j < scores.length; j++) {
-                allScores[j] += scores[j];
-                scores[j] = 0f;
-            }
-        }
-
-        return allScores;
-    }
-
-    void synchronizeScores(float[] allScores) {
         double dampingFactor = this.dampingFactor;
         double[] pageRank = this.pageRank;
+        double[] deltas = this.deltas;
+        float[][] prevScores = this.prevScores;
+        int length = prevScores[0].length;
 
-        int length = allScores.length;
         for (int i = 0; i < length; i++) {
-            float sum = allScores[i];
-
-            double delta = dampingFactor * (double) sum;
+            double sum = 0.0;
+            for (float[] scores : prevScores) {
+                sum += (double) scores[i];
+                scores[i] = 0f;
+            }
+            double delta = dampingFactor * sum;
             pageRank[i] += delta;
             deltas[i] = delta;
-            allScores[i] = 0f;
         }
     }
 
