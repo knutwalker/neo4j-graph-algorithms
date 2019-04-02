@@ -23,9 +23,6 @@ import org.neo4j.graphalgo.api.RelationshipConsumer;
 import org.neo4j.graphalgo.api.RelationshipIterator;
 import org.neo4j.graphdb.Direction;
 
-import java.util.Arrays;
-import java.util.stream.IntStream;
-
 import static org.neo4j.graphalgo.core.utils.ArrayUtil.binaryLookup;
 
 final class EigenvectorCentralityComputeStep extends BaseComputeStep implements RelationshipConsumer {
@@ -45,7 +42,7 @@ final class EigenvectorCentralityComputeStep extends BaseComputeStep implements 
         this.initialValue = 1.0 / nodeCount;
     }
 
-    private int srcRankDelta;
+    private float srcRankDelta;
 
 
     void singleIteration() {
@@ -54,10 +51,10 @@ final class EigenvectorCentralityComputeStep extends BaseComputeStep implements 
         RelationshipIterator rels = this.relationshipIterator;
         for (int nodeId = startNode; nodeId < endNode; ++nodeId) {
             double delta = deltas[nodeId - startNode];
-            if (delta > 0) {
+            if (delta > 0.0) {
                 int degree = degrees.degree(nodeId, Direction.OUTGOING);
                 if (degree > 0) {
-                    srcRankDelta = (int) (100_000 * delta);
+                    srcRankDelta = (float) delta;
                     rels.forEachRelationship(nodeId, Direction.OUTGOING, this);
                 }
             }
@@ -66,7 +63,7 @@ final class EigenvectorCentralityComputeStep extends BaseComputeStep implements 
 
     @Override
     public boolean accept(int sourceNodeId, int targetNodeId, long relationId) {
-        if (srcRankDelta != 0) {
+        if (srcRankDelta != 0f) {
             int idx = binaryLookup(targetNodeId, starts);
             nextScores[idx][targetNodeId - starts[idx]] += srcRankDelta;
         }
@@ -79,17 +76,15 @@ final class EigenvectorCentralityComputeStep extends BaseComputeStep implements 
     }
 
     @Override
-    void synchronizeScores(int[] allScores) {
+    void synchronizeScores(float[] allScores) {
         double[] pageRank = this.pageRank;
 
         int length = allScores.length;
         for (int i = 0; i < length; i++) {
-            int sum = allScores[i];
-
-            double delta = sum / 100_000.0;
-            pageRank[i] += delta;
-            deltas[i] = delta;
-            allScores[i] = 0;
+            double sum = (double) allScores[i];
+            pageRank[i] += sum;
+            deltas[i] = sum;
+            allScores[i] = 0f;
         }
 
     }
