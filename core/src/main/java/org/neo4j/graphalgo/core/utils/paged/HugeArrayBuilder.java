@@ -5,13 +5,13 @@ import java.util.concurrent.atomic.AtomicLong;
 abstract class HugeArrayBuilder<Array, Huge extends HugeArray<Array, ?, Huge>> {
 
     private final Huge array;
-    private final long numberOfNodes;
+    private final long length;
     private final AtomicLong allocationIndex;
     private final ThreadLocal<BulkAdder<Array>> adders;
 
-    HugeArrayBuilder(Huge array, final long numberOfNodes) {
+    HugeArrayBuilder(Huge array, final long length) {
         this.array = array;
-        this.numberOfNodes = numberOfNodes;
+        this.length = length;
         this.allocationIndex = new AtomicLong();
         this.adders = ThreadLocal.withInitial(this::newBulkAdder);
     }
@@ -22,7 +22,7 @@ abstract class HugeArrayBuilder<Array, Huge extends HugeArray<Array, ?, Huge>> {
 
     public final BulkAdder allocate(final long nodes) {
         long startIndex = allocationIndex.getAndAccumulate(nodes, this::upperAllocation);
-        if (startIndex == numberOfNodes) {
+        if (startIndex == length) {
             return null;
         }
         BulkAdder adder = adders.get();
@@ -31,7 +31,7 @@ abstract class HugeArrayBuilder<Array, Huge extends HugeArray<Array, ?, Huge>> {
     }
 
     private long upperAllocation(long lower, long nodes) {
-        return Math.min(numberOfNodes, lower + nodes);
+        return Math.min(length, lower + nodes);
     }
 
     public final Huge build() {
