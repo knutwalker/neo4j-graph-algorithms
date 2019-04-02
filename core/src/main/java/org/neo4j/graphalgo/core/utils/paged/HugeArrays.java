@@ -23,7 +23,7 @@ final class HugeArrays {
 
     static int numberOfPages(long capacity) {
         final long numPages = (capacity + PAGE_MASK) >>> PAGE_SHIFT;
-        assert numPages <= Integer.MAX_VALUE : "pageSize=" + (PAGE_SIZE) + " is too small for such as capacity: " + capacity;
+        assert numPages <= Integer.MAX_VALUE : "pageSize=" + (PAGE_SIZE) + " is too small for capacity: " + capacity;
         return (int) numPages;
     }
 
