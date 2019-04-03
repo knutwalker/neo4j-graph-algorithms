@@ -269,7 +269,7 @@ abstract class BaseLabelPropagation<
             boolean didChange = false;
             while (nodeIds.hasNext()) {
                 long nodeId = (long) nodeIds.next();
-                didChange = compute(nodeId, didChange);
+                didChange |= compute(nodeId);
                 progressLogger.logProgress((double) nodeId, maxNode);
             }
             return didChange;
@@ -279,13 +279,13 @@ abstract class BaseLabelPropagation<
             boolean didChange = false;
             while (nodeIds.hasNext()) {
                 long nodeId = nodeIds.next();
-                didChange = compute(nodeId, didChange);
+                didChange |= compute(nodeId);
                 progressLogger.logProgress((double) nodeId, maxNode);
             }
             return didChange;
         }
 
-        final boolean compute(long nodeId, boolean didChange) {
+        final boolean compute(long nodeId) {
             votes.clear();
             long partition = existingLabels.labelFor(nodeId);
             long previous = partition;
@@ -301,7 +301,7 @@ abstract class BaseLabelPropagation<
                 existingLabels.setLabelFor(nodeId, partition);
                 return true;
             }
-            return didChange;
+            return false;
         }
 
         final void castVote(long nodeId, long candidate) {
