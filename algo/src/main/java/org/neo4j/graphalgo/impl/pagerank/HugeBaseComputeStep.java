@@ -145,7 +145,7 @@ public abstract class HugeBaseComputeStep implements HugeComputeStep {
         this.prevScores = prevScores;
     }
 
-    private void combineScores() {
+    void combineScores() {
         assert prevScores != null;
         assert prevScores.length >= 1;
 

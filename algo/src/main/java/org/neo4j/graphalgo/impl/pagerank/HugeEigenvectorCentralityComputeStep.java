@@ -80,6 +80,27 @@ final class HugeEigenvectorCentralityComputeStep extends HugeBaseComputeStep imp
     }
 
     @Override
+    void combineScores() {
+        assert prevScores != null;
+        assert prevScores.length >= 1;
+
+        double[] pageRank = this.pageRank;
+        double[] deltas = this.deltas;
+        float[][] prevScores = this.prevScores;
+        int length = prevScores[0].length;
+
+        for (int i = 0; i < length; i++) {
+            double delta = 0.0;
+            for (float[] scores : prevScores) {
+                delta += (double) scores[i];
+                scores[i] = 0f;
+            }
+            pageRank[i] += delta;
+            deltas[i] = delta;
+        }
+    }
+
+    @Override
     void normalizeDeltas() {
         for (int i = 0; i < deltas.length; i++) {
             deltas[i] = deltas[i] / l2Norm;
