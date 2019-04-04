@@ -128,6 +128,19 @@ public final class FlameGraph implements InternalProfiler, ExternalProfiler {
         }
     }
 
+    public FlameGraph() {
+        Path asyncDir = null;
+        String env = System.getenv(ASYNC_PROFILER_DIR);
+        if (env != null) {
+            asyncDir = Paths.get(env).toAbsolutePath();
+        }
+        this.event = DEFAULT_EVENT;
+        this.frameBufferSize = OptionalLong.empty();
+        this.interval = OptionalLong.empty();
+        this.threads = false;
+        this.asyncProfilerDir = asyncDir;
+    }
+
     @Override
     public Collection<String> addJVMInvokeOptions(final BenchmarkParams params) {
         return Collections.emptyList();
@@ -171,7 +184,7 @@ public final class FlameGraph implements InternalProfiler, ExternalProfiler {
 
     @Override
     public void beforeIteration(final BenchmarkParams benchmarkParams, final IterationParams iterationParams) {
-        if (iterationParams.getType() != IterationType.MEASUREMENT || started) {
+        if (iterationParams.getType() != IterationType.MEASUREMENT || started || asyncProfilerDir == null) {
             return;
         }
 
