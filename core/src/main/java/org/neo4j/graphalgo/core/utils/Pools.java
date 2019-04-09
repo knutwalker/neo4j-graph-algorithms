@@ -31,14 +31,8 @@ import java.util.concurrent.locks.LockSupport;
 
 public final class Pools {
 
-    private static final int MAX_CONCURRENCY;
-    public static final int DEFAULT_CONCURRENCY;
-
-    static {
-        ConcurrencyConfig concurrencyConfig = ConcurrencyConfig.of();
-        MAX_CONCURRENCY = concurrencyConfig.maxConcurrency;
-        DEFAULT_CONCURRENCY = concurrencyConfig.defaultConcurrency;
-    }
+    private static final int MAX_CONCURRENCY = PoolSizeKernelExtension.concurrency(Integer.MAX_VALUE);
+    public static final int DEFAULT_CONCURRENCY = PoolSizeKernelExtension.concurrency();
 
     public static int allowedConcurrency(int concurrency) {
         return Math.min(MAX_CONCURRENCY, concurrency);
