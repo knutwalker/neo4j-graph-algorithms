@@ -172,9 +172,9 @@ public final class HugeLouvain extends LouvainAlgo<HugeLouvain> {
         // count and normalize community structure
         final long nodeCount = communityIds.size();
 
-        if (nodeCount < MAX_MAP_ENTRIES) {
-            return rebuildSmallerGraph(graph, communityIds, (int) nodeCount, communityCount);
-        }
+//        if (nodeCount < MAX_MAP_ENTRIES) {
+//            return rebuildSmallerGraph(graph, communityIds, (int) nodeCount, communityCount);
+//        }
 
         // bag of nodeId->{nodeId, ..}
         LongLongSubGraph subGraph = new LongLongSubGraph(nodeCount, tracker);
