@@ -153,9 +153,9 @@ public final class HugeLongLongDoubleMapTest {
 
     @Test
     public void resizeOnGrowthAndTrackMemoryUsage() {
-        long firstSize = 2L * sizeOfLongArray(8) + sizeOfDoubleArray(8);
-        long secondSize = 2L * sizeOfLongArray(16) + sizeOfDoubleArray(16);
-        long thirdSize = 2L * sizeOfLongArray(32) + sizeOfDoubleArray(32);
+        long firstSize = sizeOfLongArray(16) + sizeOfDoubleArray(8);
+        long secondSize = sizeOfLongArray(32) + sizeOfDoubleArray(16);
+        long thirdSize = sizeOfLongArray(64) + sizeOfDoubleArray(32);
 
         AllocationTracker tracker = AllocationTracker.create();
         HugeLongLongDoubleMap map = new HugeLongLongDoubleMap(tracker);

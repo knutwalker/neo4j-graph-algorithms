@@ -1,25 +1,12 @@
-/*
- * Copyright (c) 2017 "Neo4j, Inc." <http://neo4j.com>
- *
- * This file is part of Neo4j Graph Algorithms <http://github.com/neo4j-contrib/neo4j-graph-algorithms>.
- *
- * Neo4j Graph Algorithms is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
-package org.neo4j.graphalgo.core.utils.paged;
+package org.neo4j.graphalgo.bench;
 
 import com.carrotsearch.hppc.BitMixer;
 import com.carrotsearch.hppc.Containers;
+import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
+import org.neo4j.graphalgo.core.utils.paged.BitUtil;
+import org.neo4j.graphalgo.core.utils.paged.HugeCursor;
+import org.neo4j.graphalgo.core.utils.paged.HugeDoubleArray;
+import org.neo4j.graphalgo.core.utils.paged.HugeLongArray;
 
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -27,11 +14,12 @@ import java.util.concurrent.atomic.AtomicLong;
  * map with two longs as keys and huge underlying storage, so it can
  * store more than 2B values
  */
-public final class HugeLongLongDoubleMap {
+public final class OldHugeLongLongDoubleMap {
 
     private final AllocationTracker tracker;
 
-    private HugeLongArray keys;
+    private HugeLongArray keys1;
+    private HugeLongArray keys2;
     private HugeDoubleArray values;
     private HugeCursor<long[]> keysCursor;
 
@@ -40,20 +28,20 @@ public final class HugeLongLongDoubleMap {
     private long mask;
     private long resizeAt;
 
-    private static final long DEFAULT_EXPECTED_ELEMENTS = 4L;
-    private static final double LOAD_FACTOR = 0.75;
+    private final static long DEFAULT_EXPECTED_ELEMENTS = 4L;
+    private final static double LOAD_FACTOR = 0.75;
 
     /**
      * New instance with sane defaults.
      */
-    public HugeLongLongDoubleMap(AllocationTracker tracker) {
+    public OldHugeLongLongDoubleMap(AllocationTracker tracker) {
         this(DEFAULT_EXPECTED_ELEMENTS, tracker);
     }
 
     /**
      * New instance with sane defaults.
      */
-    public HugeLongLongDoubleMap(long expectedElements, AllocationTracker tracker) {
+    public OldHugeLongLongDoubleMap(long expectedElements, AllocationTracker tracker) {
         this.tracker = tracker;
         initialBuffers(expectedElements);
     }
@@ -81,9 +69,9 @@ public final class HugeLongLongDoubleMap {
         if (assigned == resizeAt) {
             allocateThenInsertThenRehash(slot, key1, key2, value);
         } else {
+            keys1.set(slot, key1);
+            keys2.set(slot, key2);
             values.set(slot, value);
-            keys.set(slot << 1, key1);
-            keys.set((slot << 1) + 1, key2);
         }
 
         assigned++;
@@ -104,11 +92,12 @@ public final class HugeLongLongDoubleMap {
             long key1,
             long key2,
             long start) {
-        HugeLongArray keys = this.keys;
+        HugeLongArray keys1 = this.keys1;
+        HugeLongArray keys2 = this.keys2;
         HugeCursor<long[]> cursor = this.keysCursor;
-        long slot = findSlot(key1, key2, start << 1, keys.size(), keys, cursor);
+        long slot = findSlot(key1, key2, start, keys1.size(), keys1, keys2, cursor);
         if (slot == -1L) {
-            slot = findSlot(key1, key2, 0L, start << 1, keys, cursor);
+            slot = findSlot(key1, key2, 0L, start, keys1, keys2, cursor);
         }
         return slot;
     }
@@ -118,27 +107,28 @@ public final class HugeLongLongDoubleMap {
             long key2,
             long start,
             long end,
-            HugeLongArray keys,
+            HugeLongArray keys1,
+            HugeLongArray keys2,
             HugeCursor<long[]> cursor) {
 
-        long slot = start >> 1;
+        long slot = start;
         int blockPos, blockEnd;
         long[] keysBlock;
         long existing;
-        keys.cursor(cursor, start, end);
+        keys1.cursor(cursor, start, end);
         while (cursor.next()) {
             keysBlock = cursor.array;
             blockPos = cursor.offset;
-            blockEnd = cursor.limit - 1;
+            blockEnd = cursor.limit;
             while (blockPos < blockEnd) {
                 existing = keysBlock[blockPos];
-                if (existing == key1 && keysBlock[blockPos + 1] == key2) {
+                if (existing == key1 && keys2.get(slot) == key2) {
                     return slot;
                 }
                 if (existing == 0L) {
                     return ~slot - 1L;
                 }
-                blockPos += 2;
+                ++blockPos;
                 ++slot;
             }
         }
@@ -155,11 +145,13 @@ public final class HugeLongLongDoubleMap {
 
     public void release() {
         long released = 0L;
-        released += keys.release();
+        released += keys1.release();
+        released += keys2.release();
         released += values.release();
         tracker.remove(released);
 
-        keys = null;
+        keys1 = null;
+        keys2 = null;
         values = null;
         assigned = 0L;
         mask = 0L;
@@ -177,38 +169,30 @@ public final class HugeLongLongDoubleMap {
         final StringBuilder buffer = new StringBuilder();
         buffer.append('[');
 
-        HugeCursor<long[]> keys = this.keys.cursor(this.keys.newCursor());
+        HugeCursor<long[]> keys1 = this.keys1.cursor(this.keys1.newCursor());
+        HugeCursor<long[]> keys2 = this.keys2.cursor(this.keys2.newCursor());
         HugeCursor<double[]> values = this.values.cursor(this.values.newCursor());
 
-        long key1, key2, slot;
-        while (values.next()) {
+        long key1;
+        while (keys1.next()) {
+            keys2.next();
+            values.next();
+
+            long[] ks1 = keys1.array;
+            long[] ks2 = keys2.array;
             double[] vs = values.array;
-            int vpos = values.offset;
-            int vend = values.limit;
-
-            int kpos = keys.offset;
-            int kend = keys.limit;
-            long[] ks = keys.array;
-
-            while (vpos < vend) {
-                if (kpos >= kend) {
-                    keys.next();
-                    kpos = keys.offset;
-                    kend = keys.limit;
-                    ks = keys.array;
-                }
-                if ((key1 = ks[kpos]) != 0L) {
+            int end = keys1.limit;
+            for (int pos = keys1.offset; pos < end; ++pos) {
+                if ((key1 = ks1[pos]) != 0L) {
                     buffer
                             .append('(')
                             .append(key1 - 1L)
                             .append(',')
-                            .append(ks[kpos + 1] - 1L)
+                            .append(ks2[pos] - 1L)
                             .append(")=>")
-                            .append(vs[vpos])
+                            .append(vs[pos])
                             .append(", ");
                 }
-                kpos += 2;
-                ++vpos;
             }
         }
 
@@ -237,14 +221,17 @@ public final class HugeLongLongDoubleMap {
         final int newKeyMixer = RandomSeed.next();
 
         // Ensure no change is done if we hit an OOM.
-        HugeLongArray prevKeys = this.keys;
+        HugeLongArray prevKeys1 = this.keys1;
+        HugeLongArray prevKeys2 = this.keys2;
         HugeDoubleArray prevValues = this.values;
         try {
-            this.keys = HugeLongArray.newArray(arraySize << 1, tracker);
+            this.keys1 = HugeLongArray.newArray(arraySize, tracker);
+            this.keys2 = HugeLongArray.newArray(arraySize, tracker);
             this.values = HugeDoubleArray.newArray(arraySize, tracker);
-            keysCursor = keys.newCursor();
+            keysCursor = keys1.newCursor();
         } catch (OutOfMemoryError e) {
-            this.keys = prevKeys;
+            this.keys1 = prevKeys1;
+            this.keys2 = prevKeys2;
             this.values = prevValues;
             throw e;
         }
@@ -258,82 +245,44 @@ public final class HugeLongLongDoubleMap {
      * Rehash from old buffers to new buffers.
      */
     private void rehash(
-            HugeLongArray fromKeys,
+            HugeLongArray fromKeys1,
+            HugeLongArray fromKeys2,
             HugeDoubleArray fromValues) {
-        assert fromKeys.size() == fromValues.size() << 1 &&
+        assert fromKeys1.size() == fromValues.size() &&
+                fromKeys2.size() == fromValues.size() &&
                 BitUtil.isPowerOfTwo(fromValues.size());
 
         // Rehash all stored key/value pairs into the new buffers.
-        final HugeLongArray newKeys = this.keys;
+        final HugeLongArray newKeys1 = this.keys1;
+        final HugeLongArray newKeys2 = this.keys2;
         final HugeDoubleArray newValues = this.values;
         final long mask = this.mask;
 
-        HugeCursor<long[]> keys = fromKeys.cursor(fromKeys.newCursor());
+        HugeCursor<long[]> keys1 = fromKeys1.cursor(fromKeys1.newCursor());
+        HugeCursor<long[]> keys2 = fromKeys2.cursor(fromKeys2.newCursor());
         HugeCursor<double[]> values = fromValues.cursor(fromValues.newCursor());
 
         long key1, key2, slot;
+        while (keys1.next()) {
+            keys2.next();
+            values.next();
 
-        int vpos = 0;
-        int vend = 0;
-        int kpos = 0;
-        int kend = 0;
-        double[] vs = null;
-        long[] ks;
-
-        while (keys.next()) {
-            if (vpos >= vend) {
-                values.next();
-                vpos = values.offset;
-                vend = values.limit;
-                vs = values.array;
-            }
-
-            kpos = keys.offset;
-            kend = keys.limit - 1;
-            ks = keys.array;
-
-            for (; kpos < kend; kpos += 2, ++vpos) {
-                if ((key1 = ks[kpos]) != 0L) {
-                    key2 = ks[kpos + 1];
+            long[] ks1 = keys1.array;
+            long[] ks2 = keys2.array;
+            double[] vs = values.array;
+            int end = keys1.limit;
+            for (int pos = keys1.offset; pos < end; ++pos) {
+                if ((key1 = ks1[pos]) != 0L) {
+                    key2 = ks2[pos];
                     slot = hashKey(key1, key2) & mask;
                     slot = findSlot(key1, key2, slot);
                     slot = ~(1L + slot);
-                    newKeys.set(slot << 1, key1);
-                    newKeys.set((slot << 1) + 1, key2);
-                    newValues.set(slot, vs[vpos]);
+                    newKeys1.set(slot, key1);
+                    newKeys2.set(slot, key2);
+                    newValues.set(slot, vs[pos]);
                 }
             }
         }
-
-//        while (values.next()) {
-//            double[] vs = values.array;
-//            int vpos = values.offset;
-//            int vend = values.limit;
-//
-//            int kpos = keys.offset;
-//            int kend = keys.limit;
-//            long[] ks = keys.array;
-//
-//            while (vpos < vend) {
-//                if (kpos >= kend) {
-//                    keys.next();
-//                    kpos = keys.offset;
-//                    kend = keys.limit;
-//                    ks = keys.array;
-//                }
-//                if ((key1 = ks[kpos]) != 0L) {
-//                    key2 = ks[kpos + 1];
-//                    slot = hashKey(key1, key2) & mask;
-//                    slot = findSlot(key1, key2, slot);
-//                    slot = ~(1L + slot);
-//                    newKeys.set(slot << 1, key1);
-//                    newKeys.set((slot << 1) + 1, key2);
-//                    newValues.set(slot, vs[vpos]);
-//                }
-//                kpos += 2;
-//                ++vpos;
-//            }
-//        }
     }
 
 
@@ -349,22 +298,24 @@ public final class HugeLongLongDoubleMap {
         assert assigned == resizeAt;
 
         // Try to allocate new buffers first. If we OOM, we leave in a consistent state.
-        final HugeLongArray prevKeys = this.keys;
+        final HugeLongArray prevKeys1 = this.keys1;
+        final HugeLongArray prevKeys2 = this.keys2;
         final HugeDoubleArray prevValues = this.values;
         allocateBuffers(nextBufferSize(mask + 1), tracker);
-        assert this.keys.size() > prevKeys.size();
+        assert this.keys1.size() > prevKeys1.size();
 
         // We have succeeded at allocating new data so insert the pending key/value at
         // the free slot in the old arrays before rehashing.
-        prevKeys.set(slot << 1, pendingKey1);
-        prevKeys.set((slot << 1) + 1, pendingKey2);
+        prevKeys1.set(slot, pendingKey1);
+        prevKeys2.set(slot, pendingKey2);
         prevValues.set(slot, pendingValue);
 
         // Rehash old keys, including the pending key.
-        rehash(prevKeys, prevValues);
+        rehash(prevKeys1, prevKeys2, prevValues);
 
         long released = 0L;
-        released += prevKeys.release();
+        released += prevKeys1.release();
+        released += prevKeys2.release();
         released += prevValues.release();
         tracker.remove(released);
     }
