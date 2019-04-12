@@ -108,6 +108,12 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
      * {@inheritDoc}
      */
     @Override
+    abstract public long sizeOf();
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     abstract public long release();
 
     /**
@@ -292,6 +298,11 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
         }
 
         @Override
+        public long sizeOf() {
+            return sizeOfObjectArray(size);
+        }
+
+        @Override
         public long release() {
             if (page != null) {
                 page = null;
@@ -444,6 +455,11 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
         @Override
         public long size() {
             return size;
+        }
+
+        @Override
+        public long sizeOf() {
+            return memoryUsed;
         }
 
         @Override
