@@ -273,9 +273,7 @@ public final class HugeLouvain extends LouvainAlgo<HugeLouvain> {
         this.communities.setAll(i -> communityIds.get(communities.get(i)));
         // the communities are stored in the dendrogram, one per level
         // so we have to copy the current state and return it as a snapshot
-        HugeLongArray copy = HugeLongArray.newArray(rootNodeCount, tracker);
-        this.communities.copyTo(copy, rootNodeCount);
-        return copy;
+        return this.communities.copyOf(rootNodeCount, tracker);
     }
 
     /**
