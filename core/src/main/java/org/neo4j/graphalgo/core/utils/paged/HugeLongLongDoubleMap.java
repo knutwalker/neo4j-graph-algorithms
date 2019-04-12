@@ -5,11 +5,15 @@ import com.carrotsearch.hppc.Containers;
 
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.shallowSizeOfInstance;
+
 /**
  * map with two longs as keys and huge underlying storage, so it can
  * store more than 2B values
  */
 public final class HugeLongLongDoubleMap {
+
+    private static final long CLASS_MEMORY = shallowSizeOfInstance(HugeLongLongDoubleMap.class);
 
     private final AllocationTracker tracker;
 
@@ -38,6 +42,15 @@ public final class HugeLongLongDoubleMap {
     public HugeLongLongDoubleMap(long expectedElements, AllocationTracker tracker) {
         this.tracker = tracker;
         initialBuffers(expectedElements);
+        tracker.add(CLASS_MEMORY);
+    }
+
+    public long sizeOf() {
+        return CLASS_MEMORY + keys.sizeOf() + values.sizeOf();
+    }
+
+    public void put(long key1, long key2, double value) {
+        put0(1L + key1, 1L + key2, value);
     }
 
     public void addTo(long key1, long key2, double value) {
@@ -46,6 +59,29 @@ public final class HugeLongLongDoubleMap {
 
     public double getOrDefault(long key1, long key2, double defaultValue) {
         return getOrDefault0(1L + key1, 1L + key2, defaultValue);
+    }
+
+    private void put0(long key1, long key2, double value) {
+        assert assigned < mask + 1L;
+        final long key = hashKey(key1, key2);
+
+        long slot = findSlot(key1, key2, key & mask);
+        assert slot != -1L;
+        if (slot >= 0L) {
+            values.set(slot, value);
+            return;
+        }
+
+        slot = ~(1L + slot);
+        if (assigned == resizeAt) {
+            allocateThenInsertThenRehash(slot, key1, key2, value);
+        } else {
+            values.set(slot, value);
+            keys.set(slot << 1, key1);
+            keys.set((slot << 1) + 1, key2);
+        }
+
+        assigned++;
     }
 
     private void addTo0(long key1, long key2, double value) {
@@ -136,7 +172,7 @@ public final class HugeLongLongDoubleMap {
     }
 
     public void release() {
-        long released = 0L;
+        long released = CLASS_MEMORY;
         released += keys.release();
         released += values.release();
         tracker.remove(released);

@@ -91,7 +91,7 @@ abstract class WeightBuilder {
         void addWeightImporter(int pageIndex) {
             int pageSize = (int) Math.min((long) this.pageSize, nodeCount - (((long) pageIndex) << pageShift));
             if (pageSize > 0) {
-                builders[pageIndex] = weights.threadLocalCopy(pageIndex, pageSize);
+                builders[pageIndex] = weights.threadLocalCopy(pageIndex);
             }
         }
 

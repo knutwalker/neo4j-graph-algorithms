@@ -2,6 +2,7 @@ package org.neo4j.graphalgo.bench;
 
 import org.neo4j.graphalgo.api.HugeWeightMapping;
 import org.neo4j.graphalgo.core.huge.loader.SingleHugeWeightMapBuilder;
+import org.neo4j.graphalgo.core.huge.loader.SingleOldHugeWeightMapBuilder;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphalgo.core.utils.paged.HugeLongLongDoubleMap;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -38,17 +39,17 @@ public class HugeWeightMapBenchmark {
     }
 
     @Benchmark
-    public OldHugeLongLongDoubleMap oldLongLongDoubleMap(HugeWeightMaps data) {
+    public HugeWeightMapping oldHugeWeightMap(HugeWeightMaps data) {
         final long[] keys1 = data.keys1;
         final long[] keys2 = data.keys2;
         final double[] values = data.values;
         int len = keys1.length;
-        OldHugeLongLongDoubleMap map = new OldHugeLongLongDoubleMap(len, AllocationTracker.EMPTY);
+        SingleOldHugeWeightMapBuilder builder = new SingleOldHugeWeightMapBuilder(len);
         for (int i = 0; i < len; i++) {
-            map.addTo(keys1[i], keys2[2], values[i]);
-            map.addTo(keys2[i], keys1[2], values[i]);
+            builder.add(keys1[i], keys2[2], values[i]);
+            builder.add(keys2[i], keys1[2], values[i]);
         }
-        return map;
+        return builder.build();
     }
 
     @Benchmark
@@ -58,6 +59,20 @@ public class HugeWeightMapBenchmark {
         final double[] values = data.values;
         int len = keys1.length;
         HugeLongLongDoubleMap map = new HugeLongLongDoubleMap(len, AllocationTracker.EMPTY);
+        for (int i = 0; i < len; i++) {
+            map.addTo(keys1[i], keys2[2], values[i]);
+            map.addTo(keys2[i], keys1[2], values[i]);
+        }
+        return map;
+    }
+
+    @Benchmark
+    public OldHugeLongLongDoubleMap oldLongLongDoubleMap(HugeWeightMaps data) {
+        final long[] keys1 = data.keys1;
+        final long[] keys2 = data.keys2;
+        final double[] values = data.values;
+        int len = keys1.length;
+        OldHugeLongLongDoubleMap map = new OldHugeLongLongDoubleMap(len, AllocationTracker.EMPTY);
         for (int i = 0; i < len; i++) {
             map.addTo(keys1[i], keys2[2], values[i]);
             map.addTo(keys2[i], keys1[2], values[i]);
