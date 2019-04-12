@@ -126,6 +126,12 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
      * {@inheritDoc}
      */
     @Override
+    abstract public HugeObjectArray<T> copyOf(final long newLength, final AllocationTracker tracker);
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     final T boxedGet(final long index) {
         return get(index);
     }
@@ -273,6 +279,14 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
         }
 
         @Override
+        public HugeObjectArray<T> copyOf(long newLength, AllocationTracker tracker) {
+            Class<T> tCls = (Class<T>) page.getClass().getComponentType();
+            HugeObjectArray<T> copy = HugeObjectArray.newArray(tCls, newLength, tracker);
+            this.copyTo(copy, newLength);
+            return copy;
+        }
+
+        @Override
         public long size() {
             return size;
         }
@@ -417,6 +431,14 @@ public abstract class HugeObjectArray<T> extends HugeArray<T[], T, HugeObjectArr
                     Arrays.fill(dst.pages[i], null);
                 }
             }
+        }
+
+        @Override
+        public HugeObjectArray<T> copyOf(long newLength, AllocationTracker tracker) {
+            Class<T> tCls = (Class<T>) pages.getClass().getComponentType().getComponentType();
+            HugeObjectArray<T> copy = HugeObjectArray.newArray(tCls, newLength, tracker);
+            this.copyTo(copy, newLength);
+            return copy;
         }
 
         @Override
