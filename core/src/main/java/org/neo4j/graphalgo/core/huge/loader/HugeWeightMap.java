@@ -27,12 +27,11 @@ import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.shallowSizeOfInst
 import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfObjectArray;
 
 
-abstract class HugeWeightMap {
+final class HugeWeightMap {
 
-    static HugeWeightMapping of(Page[] pages, int pageSize, double defaultValue, AllocationTracker tracker) {
+    static <T extends HugeWeightMapping> HugeWeightMapping of(T[] pages, int pageSize, double defaultValue, AllocationTracker tracker) {
         if (pages.length == 1) {
-            Page page = pages[0];
-            page.setDefaultValue(defaultValue);
+            T page = pages[0];
             return page;
         }
         return new PagedHugeWeightMap(pages, pageSize, defaultValue, tracker);
@@ -111,9 +110,9 @@ abstract class HugeWeightMap {
 
         private final double defaultValue;
 
-        private Page[] pages;
+        private HugeWeightMapping[] pages;
 
-        PagedHugeWeightMap(Page[] pages, int pageSize, double defaultValue, AllocationTracker tracker) {
+        PagedHugeWeightMap(HugeWeightMapping[] pages, int pageSize, double defaultValue, AllocationTracker tracker) {
             assert pageSize == 0 || BitUtil.isPowerOfTwo(pageSize);
             this.pageShift = Integer.numberOfTrailingZeros(pageSize);
             this.pageMask = (long) (pageSize - 1);
@@ -130,9 +129,9 @@ abstract class HugeWeightMap {
         @Override
         public double weight(final long source, final long target, final double defaultValue) {
             int pageIndex = (int) (source >>> pageShift);
-            Page page = pages[pageIndex];
+            HugeWeightMapping page = pages[pageIndex];
             if (page != null) {
-                return page.get((int) (source & pageMask), target, defaultValue);
+                return page.weight((source & pageMask), target, defaultValue);
             }
             return defaultValue;
         }
@@ -145,7 +144,7 @@ abstract class HugeWeightMap {
         public long release() {
             if (pages != null) {
                 long released = CLASS_MEMORY + sizeOfObjectArray(pages.length);
-                for (Page page : pages) {
+                for (HugeWeightMapping page : pages) {
                     if (page != null) {
                         released += page.release();
                     }
