@@ -42,7 +42,7 @@ public final class SingleHugeWeightMapBuilder {
         for (; pageIndex < numberOfPages; pageIndex++) {
             int sizeOfPage = (int) Math.min((long) this.pageSize, nodeCount - (((long) pageIndex) << pageShift));
             if (sizeOfPage > 0) {
-                HugeWeightMap.Page page = new HugeWeightMap.Page(sizeOfPage, AllocationTracker.EMPTY);
+                HugeWeightMap.Page page = new HugeWeightMap.Page(AllocationTracker.EMPTY, 1.0);
                 pages[pageIndex] = page;
             } else {
                 break;

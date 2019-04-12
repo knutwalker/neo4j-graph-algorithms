@@ -65,9 +65,8 @@ class HugeWeightMapBuilder {
         pages = new HugeWeightMap.Page[numberOfPages];
     }
 
-    HugeWeightMapBuilder threadLocalCopy(int threadIndex, int batchSize) {
-        assert pageSize == 0 || batchSize <= pageSize;
-        HugeWeightMap.Page page = new HugeWeightMap.Page(batchSize, tracker);
+    HugeWeightMapBuilder threadLocalCopy(int threadIndex) {
+        HugeWeightMap.Page page = new HugeWeightMap.Page(tracker, defaultWeight);
         pages[threadIndex] = page;
         return new HugeWeightMapBuilder(tracker, weightProperty, defaultWeight, page);
     }
@@ -121,7 +120,7 @@ class HugeWeightMapBuilder {
         }
 
         @Override
-        HugeWeightMapBuilder threadLocalCopy(int threadIndex, int batchSize) {
+        HugeWeightMapBuilder threadLocalCopy(int threadIndex) {
             return this;
         }
 

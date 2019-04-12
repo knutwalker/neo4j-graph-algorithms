@@ -19,9 +19,9 @@
 package org.neo4j.graphalgo.core.huge.loader;
 
 import org.neo4j.graphalgo.api.HugeWeightMapping;
-import org.neo4j.graphalgo.core.utils.container.TrackingLongDoubleHashMap;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphalgo.core.utils.paged.BitUtil;
+import org.neo4j.graphalgo.core.utils.paged.HugeLongLongDoubleMap;
 
 import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.shallowSizeOfInstance;
 import static org.neo4j.graphalgo.core.utils.paged.MemoryUsage.sizeOfObjectArray;
@@ -43,14 +43,13 @@ final class HugeWeightMap {
     static final class Page implements HugeWeightMapping {
         private static final long CLASS_MEMORY = shallowSizeOfInstance(Page.class);
 
-        private TrackingLongDoubleHashMap[] data;
-        private final AllocationTracker tracker;
-        private double defaultValue;
+        private HugeLongLongDoubleMap data;
+        private final double defaultValue;
 
-        Page(int pageSize, AllocationTracker tracker) {
-            this.data = new TrackingLongDoubleHashMap[pageSize];
-            this.tracker = tracker;
-            tracker.add(CLASS_MEMORY + sizeOfObjectArray(pageSize));
+        Page(AllocationTracker tracker, double defaultValue) {
+            tracker.add(CLASS_MEMORY);
+            this.data = new HugeLongLongDoubleMap(tracker);
+            this.defaultValue = defaultValue;
         }
 
         @Override
@@ -65,39 +64,22 @@ final class HugeWeightMap {
          }
 
         double get(int localIndex, long target, double defaultValue) {
-            TrackingLongDoubleHashMap map = data[localIndex];
-            return map != null ? map.getOrDefault(target, defaultValue) : defaultValue;
+            return data.getOrDefault(localIndex, target, defaultValue);
         }
 
         void put(int localIndex, long target, double value) {
-            mapForIndex(localIndex).put(target, value);
+            data.put(localIndex, target, value);
         }
 
         @Override
         public long release() {
             if (data != null) {
-                long released = CLASS_MEMORY + sizeOfObjectArray(data.length);
-                for (TrackingLongDoubleHashMap map : data) {
-                    if (map != null) {
-                        released += map.free();
-                    }
-                }
+                data.release();
                 data = null;
+                long released = CLASS_MEMORY;
                 return released;
             }
             return 0L;
-        }
-
-        private void setDefaultValue(double defaultValue) {
-            this.defaultValue = defaultValue;
-        }
-
-        private TrackingLongDoubleHashMap mapForIndex(int localIndex) {
-            TrackingLongDoubleHashMap map = data[localIndex];
-            if (map == null) {
-                map = data[localIndex] = new TrackingLongDoubleHashMap(tracker);
-            }
-            return map;
         }
     }
 
