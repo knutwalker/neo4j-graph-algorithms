@@ -19,23 +19,24 @@
 package org.neo4j.graphalgo.core.utils.paged;
 
 import com.carrotsearch.hppc.BitMixer;
-import com.carrotsearch.hppc.Containers;
+import com.carrotsearch.hppc.cursors.LongLongCursor;
 
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 /**
- * map with two longs as keys and huge underlying storage, so it can
+ * map with long=>long mapping and huge underlying storage, so it can
  * store more than 2B values
  */
-public final class HugeLongLongDoubleMap {
+public final class HugeLongLongMap implements Iterable<LongLongCursor> {
 
     private final AllocationTracker tracker;
 
     private HugeLongArray keys;
-    private HugeDoubleArray values;
+    private HugeLongArray values;
     private HugeCursor<long[]> keysCursor;
+    private EntryIterator entries;
 
-    private int keyMixer;
     private long assigned;
     private long mask;
     private long resizeAt;
@@ -46,14 +47,14 @@ public final class HugeLongLongDoubleMap {
     /**
      * New instance with sane defaults.
      */
-    public HugeLongLongDoubleMap(AllocationTracker tracker) {
+    public HugeLongLongMap(AllocationTracker tracker) {
         this(DEFAULT_EXPECTED_ELEMENTS, tracker);
     }
 
     /**
      * New instance with sane defaults.
      */
-    public HugeLongLongDoubleMap(long expectedElements, AllocationTracker tracker) {
+    public HugeLongLongMap(long expectedElements, AllocationTracker tracker) {
         this.tracker = tracker;
         initialBuffers(expectedElements);
     }
@@ -62,46 +63,18 @@ public final class HugeLongLongDoubleMap {
         return keys.sizeOf() + values.sizeOf();
     }
 
-    public void put(long key1, long key2, double value) {
-        put0(1L + key1, 1L + key2, value);
+    public void addTo(long key, long value) {
+        addTo0(1L + key, value);
     }
 
-    public void addTo(long key1, long key2, double value) {
-        addTo0(1L + key1, 1L + key2, value);
+    public long getOrDefault(long key, long defaultValue) {
+        return getOrDefault0(1L + key, defaultValue);
     }
 
-    public double getOrDefault(long key1, long key2, double defaultValue) {
-        return getOrDefault0(1L + key1, 1L + key2, defaultValue);
-    }
-
-    private void put0(long key1, long key2, double value) {
+    private void addTo0(long key, long value) {
         assert assigned < mask + 1L;
-        final long key = hashKey(key1, key2);
-
-        long slot = findSlot(key1, key2, key & mask);
-        assert slot != -1L;
-        if (slot >= 0L) {
-            values.set(slot, value);
-            return;
-        }
-
-        slot = ~(1L + slot);
-        if (assigned == resizeAt) {
-            allocateThenInsertThenRehash(slot, key1, key2, value);
-        } else {
-            values.set(slot, value);
-            keys.set(slot << 1, key1);
-            keys.set((slot << 1) + 1, key2);
-        }
-
-        assigned++;
-    }
-
-    private void addTo0(long key1, long key2, double value) {
-        assert assigned < mask + 1L;
-        final long key = hashKey(key1, key2);
-
-        long slot = findSlot(key1, key2, key & mask);
+        final long hash = BitMixer.mixPhi(key);
+        long slot = findSlot(key, hash & mask);
         assert slot != -1L;
         if (slot >= 0L) {
             values.addTo(slot, value);
@@ -110,20 +83,18 @@ public final class HugeLongLongDoubleMap {
 
         slot = ~(1L + slot);
         if (assigned == resizeAt) {
-            allocateThenInsertThenRehash(slot, key1, key2, value);
+            allocateThenInsertThenRehash(slot, key, value);
         } else {
             values.set(slot, value);
-            keys.set(slot << 1, key1);
-            keys.set((slot << 1) + 1, key2);
+            keys.set(slot, key);
         }
 
         assigned++;
     }
 
-    private double getOrDefault0(long key1, long key2, double defaultValue) {
-        final long key = hashKey(key1, key2);
-
-        long slot = findSlot(key1, key2, key & mask);
+    private long getOrDefault0(long key, long defaultValue) {
+        final long hash = BitMixer.mixPhi(key);
+        long slot = findSlot(key, hash & mask);
         if (slot >= 0L) {
             return values.get(slot);
         }
@@ -132,27 +103,25 @@ public final class HugeLongLongDoubleMap {
     }
 
     private long findSlot(
-            long key1,
-            long key2,
+            long key,
             long start) {
         HugeLongArray keys = this.keys;
         HugeCursor<long[]> cursor = this.keysCursor;
-        long slot = findSlot(key1, key2, start << 1, keys.size(), keys, cursor);
+        long slot = findSlot(key, start, keys.size(), keys, cursor);
         if (slot == -1L) {
-            slot = findSlot(key1, key2, 0L, start << 1, keys, cursor);
+            slot = findSlot(key, 0L, start, keys, cursor);
         }
         return slot;
     }
 
     private long findSlot(
-            long key1,
-            long key2,
+            long key,
             long start,
             long end,
             HugeLongArray keys,
             HugeCursor<long[]> cursor) {
 
-        long slot = start >> 1;
+        long slot = start;
         int blockPos, blockEnd;
         long[] keysBlock;
         long existing;
@@ -160,16 +129,16 @@ public final class HugeLongLongDoubleMap {
         while (cursor.next()) {
             keysBlock = cursor.array;
             blockPos = cursor.offset;
-            blockEnd = cursor.limit - 1;
+            blockEnd = cursor.limit;
             while (blockPos < blockEnd) {
                 existing = keysBlock[blockPos];
-                if (existing == key1 && keysBlock[blockPos + 1] == key2) {
+                if (existing == key) {
                     return slot;
                 }
                 if (existing == 0L) {
                     return ~slot - 1L;
                 }
-                blockPos += 2;
+                ++blockPos;
                 ++slot;
             }
         }
@@ -200,6 +169,11 @@ public final class HugeLongLongDoubleMap {
         allocateBuffers(minBufferSize(expectedElements), tracker);
     }
 
+    @Override
+    public Iterator<LongLongCursor> iterator() {
+        return entries.reset();
+    }
+
     /**
      * Convert the contents of this map to a human-friendly string.
      */
@@ -208,39 +182,12 @@ public final class HugeLongLongDoubleMap {
         final StringBuilder buffer = new StringBuilder();
         buffer.append('[');
 
-        HugeCursor<long[]> keys = this.keys.cursor(this.keys.newCursor());
-        HugeCursor<double[]> values = this.values.cursor(this.values.newCursor());
-
-        long key1, key2, slot;
-        while (values.next()) {
-            double[] vs = values.array;
-            int vpos = values.offset;
-            int vend = values.limit;
-
-            int kpos = keys.offset;
-            int kend = keys.limit;
-            long[] ks = keys.array;
-
-            while (vpos < vend) {
-                if (kpos >= kend) {
-                    keys.next();
-                    kpos = keys.offset;
-                    kend = keys.limit;
-                    ks = keys.array;
-                }
-                if ((key1 = ks[kpos]) != 0L) {
-                    buffer
-                            .append('(')
-                            .append(key1 - 1L)
-                            .append(',')
-                            .append(ks[kpos + 1] - 1L)
-                            .append(")=>")
-                            .append(vs[vpos])
-                            .append(", ");
-                }
-                kpos += 2;
-                ++vpos;
-            }
+        for (LongLongCursor cursor : this) {
+            buffer
+                    .append(cursor.key)
+                    .append("=>")
+                    .append(cursor.value)
+                    .append(", ");
         }
 
         if (buffer.length() > 1) {
@@ -253,10 +200,6 @@ public final class HugeLongLongDoubleMap {
         return buffer.toString();
     }
 
-    private long hashKey(long key1, long key2) {
-        return BitMixer.mix64(key1 ^ key2 ^ (long) this.keyMixer);
-    }
-
     /**
      * Allocate new internal buffers. This method attempts to allocate
      * and assign internal buffers atomically (either allocations succeed or not).
@@ -264,16 +207,14 @@ public final class HugeLongLongDoubleMap {
     private void allocateBuffers(long arraySize, AllocationTracker tracker) {
         assert BitUtil.isPowerOfTwo(arraySize);
 
-        // Compute new hash mixer candidate before expanding.
-        final int newKeyMixer = RandomSeed.next();
-
         // Ensure no change is done if we hit an OOM.
         HugeLongArray prevKeys = this.keys;
-        HugeDoubleArray prevValues = this.values;
+        HugeLongArray prevValues = this.values;
         try {
-            this.keys = HugeLongArray.newArray(arraySize << 1, tracker);
-            this.values = HugeDoubleArray.newArray(arraySize, tracker);
+            this.keys = HugeLongArray.newArray(arraySize, tracker);
+            this.values = HugeLongArray.newArray(arraySize, tracker);
             keysCursor = keys.newCursor();
+            entries = new EntryIterator();
         } catch (OutOfMemoryError e) {
             this.keys = prevKeys;
             this.values = prevValues;
@@ -281,7 +222,6 @@ public final class HugeLongLongDoubleMap {
         }
 
         this.resizeAt = expandAtCount(arraySize);
-        this.keyMixer = newKeyMixer;
         this.mask = arraySize - 1L;
     }
 
@@ -290,81 +230,25 @@ public final class HugeLongLongDoubleMap {
      */
     private void rehash(
             HugeLongArray fromKeys,
-            HugeDoubleArray fromValues) {
-        assert fromKeys.size() == fromValues.size() << 1 &&
+            HugeLongArray fromValues) {
+        assert fromKeys.size() == fromValues.size() &&
                 BitUtil.isPowerOfTwo(fromValues.size());
 
         // Rehash all stored key/value pairs into the new buffers.
         final HugeLongArray newKeys = this.keys;
-        final HugeDoubleArray newValues = this.values;
+        final HugeLongArray newValues = this.values;
         final long mask = this.mask;
 
-        HugeCursor<long[]> keys = fromKeys.cursor(fromKeys.newCursor());
-        HugeCursor<double[]> values = fromValues.cursor(fromValues.newCursor());
-
-        long key1, key2, slot;
-
-        int vpos = 0;
-        int vend = 0;
-        int kpos = 0;
-        int kend = 0;
-        double[] vs = null;
-        long[] ks;
-
-        while (keys.next()) {
-            if (vpos >= vend) {
-                values.next();
-                vpos = values.offset;
-                vend = values.limit;
-                vs = values.array;
-            }
-
-            kpos = keys.offset;
-            kend = keys.limit - 1;
-            ks = keys.array;
-
-            for (; kpos < kend; kpos += 2, ++vpos) {
-                if ((key1 = ks[kpos]) != 0L) {
-                    key2 = ks[kpos + 1];
-                    slot = hashKey(key1, key2) & mask;
-                    slot = findSlot(key1, key2, slot);
-                    slot = ~(1L + slot);
-                    newKeys.set(slot << 1, key1);
-                    newKeys.set((slot << 1) + 1, key2);
-                    newValues.set(slot, vs[vpos]);
-                }
+        try (EntryIterator fromEntries = new EntryIterator(fromKeys, fromValues)) {
+            for (LongLongCursor cursor : fromEntries) {
+                long key = cursor.key + 1L;
+                long slot = BitMixer.mixPhi(key) & mask;
+                slot = findSlot(key, slot);
+                slot = ~(1L + slot);
+                newKeys.set(slot, key);
+                newValues.set(slot, cursor.value);
             }
         }
-
-//        while (values.next()) {
-//            double[] vs = values.array;
-//            int vpos = values.offset;
-//            int vend = values.limit;
-//
-//            int kpos = keys.offset;
-//            int kend = keys.limit;
-//            long[] ks = keys.array;
-//
-//            while (vpos < vend) {
-//                if (kpos >= kend) {
-//                    keys.next();
-//                    kpos = keys.offset;
-//                    kend = keys.limit;
-//                    ks = keys.array;
-//                }
-//                if ((key1 = ks[kpos]) != 0L) {
-//                    key2 = ks[kpos + 1];
-//                    slot = hashKey(key1, key2) & mask;
-//                    slot = findSlot(key1, key2, slot);
-//                    slot = ~(1L + slot);
-//                    newKeys.set(slot << 1, key1);
-//                    newKeys.set((slot << 1) + 1, key2);
-//                    newValues.set(slot, vs[vpos]);
-//                }
-//                kpos += 2;
-//                ++vpos;
-//            }
-//        }
     }
 
 
@@ -376,19 +260,18 @@ public final class HugeLongLongDoubleMap {
      * with rehashing so we assign the pending element to the previous buffer
      * and rehash all keys, substituting new buffers at the end.
      */
-    private void allocateThenInsertThenRehash(long slot, long pendingKey1, long pendingKey2, double pendingValue) {
+    private void allocateThenInsertThenRehash(long slot, long pendingKey, long pendingValue) {
         assert assigned == resizeAt;
 
         // Try to allocate new buffers first. If we OOM, we leave in a consistent state.
         final HugeLongArray prevKeys = this.keys;
-        final HugeDoubleArray prevValues = this.values;
+        final HugeLongArray prevValues = this.values;
         allocateBuffers(nextBufferSize(mask + 1), tracker);
         assert this.keys.size() > prevKeys.size();
 
         // We have succeeded at allocating new data so insert the pending key/value at
         // the free slot in the old arrays before rehashing.
-        prevKeys.set(slot << 1, pendingKey1);
-        prevKeys.set((slot << 1) + 1, pendingKey2);
+        prevKeys.set(slot, pendingKey);
         prevValues.set(slot, pendingValue);
 
         // Rehash old keys, including the pending key.
@@ -427,21 +310,109 @@ public final class HugeLongLongDoubleMap {
         return Math.min(arraySize, (long) Math.ceil(arraySize * LOAD_FACTOR));
     }
 
-    private static final class RandomSeed {
-        private static final RandomSeed INSTANCE = new RandomSeed();
+    private final class EntryIterator implements AutoCloseable, Iterable<LongLongCursor>, Iterator<LongLongCursor>  {
+        private HugeCursor<long[]> keyCursor;
+        private HugeCursor<long[]> valueCursor;
+        private boolean nextFetched = false;
+        private boolean hasNext = false;
+        private LongLongCursor cursor;
+        private int pos = 0, end = 0;
+        private long[] ks, vs;
 
-        private static int next() {
-            return INSTANCE.newSeed();
+        EntryIterator() {
+            this(keys, values);
         }
 
-        private final AtomicLong seed;
-
-        private RandomSeed() {
-            seed = new AtomicLong(Containers.randomSeed64());
+        EntryIterator(HugeLongArray keys, HugeLongArray values) {
+            keyCursor = keys.cursor(keys.newCursor());
+            valueCursor = values.cursor(values.newCursor());
+            cursor = new LongLongCursor();
         }
 
-        private int newSeed() {
-            return (int) BitMixer.mix64(seed.incrementAndGet());
+        EntryIterator reset() {
+            return reset(keys, values);
+        }
+
+        EntryIterator reset(HugeLongArray keys, HugeLongArray values) {
+            keyCursor = keys.cursor(keyCursor);
+            valueCursor = values.cursor(valueCursor);
+            pos = 0;
+            end = 0;
+            hasNext = false;
+            nextFetched = false;
+            return this;
+        }
+
+        @Override
+        public boolean hasNext() {
+            if (!nextFetched) {
+                nextFetched = true;
+                return hasNext = fetchNext();
+            }
+            return hasNext;
+        }
+
+        @Override
+        public LongLongCursor next() {
+            if (!hasNext()) {
+                throw new NoSuchElementException();
+            }
+            nextFetched = false;
+            return cursor;
+        }
+
+        private boolean fetchNext() {
+            long key;
+            do {
+                while (pos < end) {
+                    if ((key = ks[pos]) != 0L) {
+                        cursor.index = pos;
+                        cursor.key = key - 1L;
+                        cursor.value = vs[pos];
+                        ++pos;
+                        return true;
+                    }
+                    ++pos;
+                }
+            } while (nextPage());
+            return false;
+        }
+
+        private boolean nextPage() {
+            return nextPage(keyCursor, valueCursor);
+        }
+
+        private boolean nextPage(
+                final HugeCursor<long[]> keys,
+                final HugeCursor<long[]> values) {
+            boolean valuesHasNext = values.next();
+            if (!keys.next()) {
+                assert !valuesHasNext;
+                return false;
+            }
+            assert valuesHasNext;
+            ks = keys.array;
+            pos = keys.offset;
+            end = keys.limit;
+            vs = values.array;
+            assert pos == values.offset;
+            assert end == values.limit;
+
+            return true;
+        }
+
+        @Override
+        public Iterator<LongLongCursor> iterator() {
+            return this;
+        }
+
+        @Override
+        public void close() {
+            keyCursor.close();
+            keyCursor = null;
+            valueCursor.close();
+            valueCursor = null;
+            cursor = null;
         }
     }
 }
