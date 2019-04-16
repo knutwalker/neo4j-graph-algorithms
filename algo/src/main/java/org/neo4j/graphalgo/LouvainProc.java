@@ -78,9 +78,10 @@ public class LouvainProc {
 
         final Builder builder = new Builder();
 
+        AllocationTracker tracker = AllocationTracker.create();
         final Graph graph;
         try (ProgressTimer timer = builder.timeLoad()) {
-            graph = graph(label, relationship, configuration);
+            graph = graph(label, relationship, configuration, tracker);
         }
 
         if(graph.nodeCount() == 0) {
@@ -88,7 +89,7 @@ public class LouvainProc {
             return Stream.of(LouvainResult.EMPTY);
         }
 
-        final Louvain louvain = new Louvain(graph, Pools.DEFAULT, 1, AllocationTracker.create())
+        final Louvain louvain = new Louvain(graph, Pools.DEFAULT, 1, tracker)
                 .withProgressLogger(ProgressLogger.wrap(log, "Louvain"))
                 .withTerminationFlag(TerminationFlag.wrap(transaction));
 
@@ -122,11 +123,11 @@ public class LouvainProc {
         }
 
         builder.withIterations(louvain.getLevel());
-        builder.withModularities(louvain.getModularities()  );
+        builder.withModularities(louvain.getModularities());
         builder.withFinalModularity(louvain.getFinalModularity());
 
         final int[] communityIds = louvain.getCommunityIds();
-        return Stream.of(builder.build(graph.nodeCount(), n -> (long) communityIds[(int) n]));
+        return Stream.of(builder.build(tracker, graph.nodeCount(), n -> (long) communityIds[(int) n]));
     }
 
     @Procedure(value = "algo.louvain.stream")
@@ -142,10 +143,11 @@ public class LouvainProc {
                 .overrideNodeLabelOrQuery(label)
                 .overrideRelationshipTypeOrQuery(relationship);
 
-        final Graph graph = graph(label, relationship, configuration);
+        AllocationTracker tracker = AllocationTracker.create();
+        final Graph graph = graph(label, relationship, configuration, tracker);
 
         // evaluation
-        final Louvain louvain = new Louvain(graph, Pools.DEFAULT, configuration.getConcurrency(), AllocationTracker.create())
+        final Louvain louvain = new Louvain(graph, Pools.DEFAULT, configuration.getConcurrency(), tracker)
                 .withProgressLogger(ProgressLogger.wrap(log, "Louvain"))
                 .withTerminationFlag(TerminationFlag.wrap(transaction));
 
@@ -166,10 +168,11 @@ public class LouvainProc {
         return louvain.dendrogramStream(configuration.get(INCLUDE_INTERMEDIATE_COMMUNITIES, false));
     }
 
-    public Graph graph(String label, String relationship, ProcedureConfiguration config) {
+    public Graph graph(String label, String relationship, ProcedureConfiguration config, AllocationTracker tracker) {
 
         GraphLoader graphLoader = new GraphLoader(api, Pools.DEFAULT)
                 .init(log, label, relationship, config)
+                .withAllocationTracker(tracker)
                 .withNodeStatement(config.getNodeLabelOrQuery())
                 .withRelationshipStatement(config.getRelationshipOrQuery())
                 .withOptionalRelationshipWeightsFromProperty(config.getWeightProperty(), config.getWeightPropertyDefaultValue(1.0));
