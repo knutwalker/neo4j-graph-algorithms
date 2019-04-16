@@ -102,8 +102,9 @@ public class ClusteringBenchmark {
     public Object _01_louvain() {
         return new Louvain(g, Pools.DEFAULT, concurrency, AllocationTracker.EMPTY)
                 .withProgressLogger(ProgressLogger.NULL_LOGGER)
+                .withTerminationFlag(TerminationFlag.RUNNING_TRUE)
                 .compute(99, 99999)
-                .getCommunityCount();
+                .communityCount();
     }
 
     @Benchmark

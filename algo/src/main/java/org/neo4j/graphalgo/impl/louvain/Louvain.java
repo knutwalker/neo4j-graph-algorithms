@@ -258,12 +258,7 @@ public class Louvain extends Algorithm<Louvain> {
         return level;
     }
 
-    /**
-     * number of distinct communities
-     *
-     * @return
-     */
-    public long getCommunityCount() {
+    public long communityCount() {
         return communityCount;
     }
 
