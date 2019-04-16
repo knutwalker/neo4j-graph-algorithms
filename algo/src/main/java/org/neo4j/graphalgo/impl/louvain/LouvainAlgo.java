@@ -63,6 +63,11 @@ public abstract class LouvainAlgo<Self extends LouvainAlgo<Self>> extends Algori
         return modularities[modularities.length - 1];
     }
 
+    /**
+     * @return number of distinct communities
+     */
+    public abstract long communityCount();
+
     public abstract long communityIdOf(long node);
 
     public abstract void export(
