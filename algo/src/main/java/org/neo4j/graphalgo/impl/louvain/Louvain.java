@@ -233,6 +233,10 @@ public class Louvain extends Algorithm<Louvain> {
         return communities;
     }
 
+    public long communityIdOf(final long nodeId) {
+        return communities[(int) nodeId];
+    }
+
     public int[] getCommunityIds(int level) {
         return dendrogram[level];
     }

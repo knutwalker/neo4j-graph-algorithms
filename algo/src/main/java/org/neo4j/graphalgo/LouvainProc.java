@@ -125,9 +125,8 @@ public class LouvainProc {
         builder.withIterations(louvain.getLevel());
         builder.withModularities(louvain.getModularities());
         builder.withFinalModularity(louvain.getFinalModularity());
-
         final int[] communityIds = louvain.getCommunityIds();
-        return Stream.of(builder.build(tracker, graph.nodeCount(), n -> (long) communityIds[(int) n]));
+        return Stream.of(builder.build(louvain.communityCount(), tracker, graph.nodeCount(), louvain::communityIdOf));
     }
 
     @Procedure(value = "algo.louvain.stream")
