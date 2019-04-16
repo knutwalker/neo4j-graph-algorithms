@@ -18,7 +18,6 @@
  */
 package org.neo4j.graphalgo;
 
-import com.carrotsearch.hppc.LongLongMap;
 import org.HdrHistogram.Histogram;
 import org.neo4j.graphalgo.api.*;
 import org.neo4j.graphalgo.core.GraphLoader;
@@ -311,7 +310,15 @@ public class LouvainProc {
         }
 
         @Override
-        protected LouvainResult build(long loadMillis, long computeMillis, long writeMillis, long postProcessingMillis, long nodeCount, long communityCount, LongLongMap communitySizeMap, Histogram communityHistogram, boolean write) {
+        protected LouvainResult build(
+                long loadMillis,
+                long computeMillis,
+                long writeMillis,
+                long postProcessingMillis,
+                long nodeCount,
+                long communityCount,
+                Histogram communityHistogram,
+                boolean write) {
             return new LouvainResult(
                     loadMillis,
                     computeMillis,
