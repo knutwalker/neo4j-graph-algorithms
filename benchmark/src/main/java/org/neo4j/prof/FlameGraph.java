@@ -29,6 +29,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -66,6 +67,8 @@ public final class FlameGraph implements InternalProfiler, ExternalProfiler {
     private final boolean threads;
     private final OptionalLong frameBufferSize;
     private final OptionalLong interval;
+    private final Optional<String> title;
+    private final Collection<String> profilerArgs;
     private final Collection<Path> generated = new ArrayList<>();
     private Path outputDir;
     private boolean started;
@@ -117,7 +120,15 @@ public final class FlameGraph implements InternalProfiler, ExternalProfiler {
                 .withRequiredArg()
                 .ofType(Boolean.class)
                 .defaultsTo(false, true);
-
+        OptionSpec<String> title = parser
+                .accepts("title", "Title of the generated SVG file")
+                .withRequiredArg()
+                .ofType(String.class);
+        OptionSpec<String> profilerArgs = parser
+                .accepts("profilerArgs", "Additional arguments that are passed directly to the Profiler, separated by comma (`,`). See https://github.com/jvm-profiling-tools/async-profiler/blob/master/README.md#profiler-options for an overview. Arguments of interest might be -s or --reverse.")
+                .withRequiredArg()
+                .withValuesSeparatedBy(',')
+                .ofType(String.class);
 
         OptionSet options = parseInitLine(initLine, parser);
         if (options.has(event)) {
@@ -144,6 +155,9 @@ public final class FlameGraph implements InternalProfiler, ExternalProfiler {
         } else {
             this.threads = false;
         }
+        this.title = Optional.ofNullable(options.valueOf(title));
+        this.profilerArgs = options.valuesOf(profilerArgs);
+
         if (options.has(asyncProfiler)) {
             this.asyncProfilerDir = Paths.get(options.valueOf(asyncProfiler));
         } else {
@@ -161,6 +175,8 @@ public final class FlameGraph implements InternalProfiler, ExternalProfiler {
         this.frameBufferSize = OptionalLong.empty();
         this.interval = OptionalLong.empty();
         this.threads = false;
+        this.title = Optional.empty();
+        this.profilerArgs = Collections.emptyList();
         this.asyncProfilerDir = asyncDir;
     }
 
@@ -229,6 +245,12 @@ public final class FlameGraph implements InternalProfiler, ExternalProfiler {
             commands.add("-i");
             commands.add(String.valueOf(i));
         });
+        title.ifPresent(t -> {
+            commands.add("--title");
+            commands.add(t);
+        });
+        commands.addAll(profilerArgs);
+
         commands.add("-f");
         commands.add(outputFile(benchmarkParams).toString());
 
