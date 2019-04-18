@@ -66,7 +66,7 @@ public final class FlameGraph implements InternalProfiler, ExternalProfiler {
         ArgumentAcceptingOptionSpec<String> asyncProfiler = parser
                 .accepts(
                         "asyncProfiler",
-                        "Location of https://github.com/jvm-profiling-tools/async-profiler unless procived by $" + ASYNC_PROFILER_DIR)
+                        "Location of https://github.com/jvm-profiling-tools/async-profiler unless provided by $" + ASYNC_PROFILER_DIR)
                 .withRequiredArg()
                 .ofType(String.class)
                 .describedAs("directory");
