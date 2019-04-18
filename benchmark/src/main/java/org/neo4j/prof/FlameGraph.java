@@ -33,6 +33,29 @@ import java.util.OptionalLong;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+/**
+ * Runs the <a href="https://github.com/jvm-profiling-tools/async-profiler">async-profiler</a>
+ * alongside the profiled benchmark and produces a flame graph of the profiling result.
+ *
+ * Run the benchmarks with {@code -prof org.neo4j.prof.FlameGraph} to enable this profiler.
+ *
+ * You have to <a href="https://github.com/jvm-profiling-tools/async-profiler/releases">download the async-profiler</a>
+ * and point the profiler to the profiler directory. This can be done either by setting
+ * the ENV variable ASYNC_PROFILER_DIR to the /path/to/async-profiler or by passing the
+ * directory to the {@code asyncProfiler} option, e.g. {@code -prof org.neo4j.prof.FlameGraph:asyncProfiler=/path/to/async-profiler}.
+ * The profiler must be at least version 1.2 with the added SVG support.
+ *
+ * Flame graph files are by default put into the {@code $TMP/org.neo4j/bench/$BENCHMARK_CLASS/} folder
+ * where {@code $TMP} is defined as the {@link System#getProperty(String) SystemProperty} {@code java.io.tmp}
+ * and {@code $BENCHMARK_CLASS} is the unqualified class name of the benchmark under profiling.
+ * This directory can be override by providing the {@code dir} option.
+ *
+ * The file name is derived from the benchmark method and its parameters.
+ *
+ * Run with {@code -prof org.neo4j.prof.FlameGraph:help} to see all possible options.
+ *
+ * @see <a href="https://github.com/jvm-profiling-tools/async-profiler">async-profiler</a>
+ */
 public final class FlameGraph implements InternalProfiler, ExternalProfiler {
 
     private static final String ASYNC_PROFILER_DIR = "ASYNC_PROFILER_DIR";
