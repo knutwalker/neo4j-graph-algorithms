@@ -247,7 +247,7 @@ public final class FlameGraph implements InternalProfiler, ExternalProfiler {
 
         if (++measurementIterationCount == iterationParams.getCount()) {
             Path profileFile = outputFile(benchmarkParams);
-            profilerCommand("stop", "-f", profileFile.toString());
+            profilerCommand("stop", Arrays.asList("-f", profileFile.toString()));
             generated.add(profileFile);
         }
 
@@ -298,10 +298,6 @@ public final class FlameGraph implements InternalProfiler, ExternalProfiler {
         }
         sb.append(".svg");
         return SLASH.matcher(sb).replaceAll("-");
-    }
-
-    private void profilerCommand(final String action, final String... options) {
-        profilerCommand(action, Arrays.asList(options));
     }
 
     private void profilerCommand(final String action, final Collection<String> options) {
