@@ -29,7 +29,6 @@ import org.neo4j.graphalgo.api.RelationshipPredicate;
 import org.neo4j.graphalgo.api.WeightMapping;
 import org.neo4j.graphalgo.api.WeightedRelationshipConsumer;
 import org.neo4j.graphalgo.core.IdMap;
-import org.neo4j.graphalgo.core.NullWeightMap;
 import org.neo4j.graphdb.Direction;
 
 import java.util.Collection;
@@ -48,7 +47,6 @@ public class HeavyGraph implements Graph, NodeProperties, RelationshipPredicate,
 
     private final IdMap nodeIdMap;
     private AdjacencyMatrix container;
-    private WeightMapping relationshipWeights;
 
     private Map<String, WeightMapping> nodePropertiesMapping;
 
@@ -57,11 +55,9 @@ public class HeavyGraph implements Graph, NodeProperties, RelationshipPredicate,
     public HeavyGraph(
             IdMap nodeIdMap,
             AdjacencyMatrix container,
-            final WeightMapping relationshipWeights,
             Map<String, WeightMapping> nodePropertiesMapping) {
         this.nodeIdMap = nodeIdMap;
         this.container = container;
-        this.relationshipWeights = relationshipWeights;
         this.nodePropertiesMapping = nodePropertiesMapping;
     }
 
@@ -100,7 +96,7 @@ public class HeavyGraph implements Graph, NodeProperties, RelationshipPredicate,
             final int nodeId,
             final Direction direction,
             final WeightedRelationshipConsumer consumer) {
-        container.forEach(nodeId, direction, relationshipWeights, consumer);
+        container.forEach(nodeId, direction, consumer);
     }
 
     @Override
@@ -120,11 +116,11 @@ public class HeavyGraph implements Graph, NodeProperties, RelationshipPredicate,
 
     @Override
     public double weightOf(final int sourceNodeId, final int targetNodeId) {
-        return relationshipWeights.get(sourceNodeId, targetNodeId);
+        return container.weightOf(sourceNodeId, targetNodeId);
     }
 
     public boolean hasWeights() {
-        return !(relationshipWeights instanceof NullWeightMap);
+        return container.hasWeights();
     }
 
     @Override
@@ -141,7 +137,6 @@ public class HeavyGraph implements Graph, NodeProperties, RelationshipPredicate,
     public void release() {
         if (!canRelease) return;
         container = null;
-        relationshipWeights = null;
         nodePropertiesMapping.clear();
     }
 

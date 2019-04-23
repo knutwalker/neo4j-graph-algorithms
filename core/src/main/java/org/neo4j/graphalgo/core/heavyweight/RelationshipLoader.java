@@ -53,7 +53,8 @@ abstract class RelationshipLoader {
         final int outDegree = loadRelationships.degreeOut(sourceNode);
         if (outDegree > 0) {
             final int[] targets = matrix.armOut(localNodeId, outDegree);
-            visit.prepareNextNode(localNodeId, targets);
+            final int[] weights = matrix.getOutWeights(localNodeId);
+            visit.prepareNextNode(localNodeId, targets, weights);
             visitOut(sourceNode, visit);
             matrix.setOutDegree(localNodeId, visit.flush());
         }
@@ -64,7 +65,8 @@ abstract class RelationshipLoader {
         final int inDegree = loadRelationships.degreeIn(sourceNode);
         if (inDegree > 0) {
             final int[] targets = matrix.armIn(localNodeId, inDegree);
-            visit.prepareNextNode(localNodeId, targets);
+            final int[] weights = matrix.getInWeights(localNodeId);
+            visit.prepareNextNode(localNodeId, targets, weights);
             visitIn(sourceNode, visit);
             matrix.setInDegree(localNodeId, visit.flush());
         }
@@ -79,7 +81,8 @@ abstract class RelationshipLoader {
         final int degree = loadRelationships.degreeUndirected(sourceNode);
         if (degree > 0) {
             final int[] targets = matrix.armOut(localNodeId, degree);
-            visitIn.prepareNextNode(localNodeId, targets);
+            int[] weights = matrix.getOutWeights(localNodeId);
+            visitIn.prepareNextNode(localNodeId, targets, weights);
             this.visitIn(sourceNode, visitIn);
             visitOut.prepareNextNode(visitIn);
             this.visitOut(sourceNode, visitOut);

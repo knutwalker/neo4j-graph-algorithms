@@ -40,6 +40,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Supplier;
 
+import static org.neo4j.kernel.api.StatementConstants.NO_SUCH_PROPERTY_KEY;
+
 
 final class RelationshipImporter extends StatementAction {
 
@@ -47,6 +49,7 @@ final class RelationshipImporter extends StatementAction {
     private final GraphSetup setup;
     private final ImportProgress progress;
     private final int[] relationId;
+    private final int relWeightId;
 
     private final int nodeSize;
     private final int nodeOffset;
@@ -54,7 +57,6 @@ final class RelationshipImporter extends StatementAction {
     private IdMap idMap;
     private AdjacencyMatrix matrix;
 
-    private WeightMapping relWeights;
     private Map<String, WeightMapping> nodeProperties;
 
     RelationshipImporter(
@@ -67,7 +69,6 @@ final class RelationshipImporter extends StatementAction {
             IdMap idMap,
             AdjacencyMatrix matrix,
             PrimitiveIntIterable nodes,
-            Supplier<WeightMapping> relWeights,
             Map<String, Supplier<WeightMapping>> nodePropertiesSupplier) {
         super(api);
         this.matrix = matrix;
@@ -77,9 +78,8 @@ final class RelationshipImporter extends StatementAction {
         this.idMap = idMap;
         this.nodes = nodes;
         this.setup = setup;
-        this.relWeights = relWeights.get();
         this.relationId = dimensions.relationshipTypeId();
-
+        this.relWeightId = dimensions.relWeightId();
         this.nodeProperties = new HashMap<>();
         nodePropertiesSupplier.forEach((key, value) -> this.nodeProperties.put(key, value.get()));
     }
@@ -137,13 +137,13 @@ final class RelationshipImporter extends StatementAction {
         final boolean loadIncoming = setup.loadIncoming;
         final boolean loadOutgoing = setup.loadOutgoing;
         final boolean sort = setup.sort;
-        final boolean shouldLoadWeights = relWeights instanceof WeightMap;
+        final boolean shouldLoadWeights = relWeightId != NO_SUCH_PROPERTY_KEY;
 
         RelationshipLoader loader = null;
         if (loadOutgoing) {
             final VisitRelationship visitor;
             if (shouldLoadWeights) {
-                visitor = new VisitOutgoingWithWeight(readOp, cursors, idMap, sort, (WeightMap) this.relWeights);
+                visitor = new VisitOutgoingWithWeight(readOp, cursors, idMap, sort, relWeightId, setup.relationDefaultWeight);
             } else {
                 visitor = new VisitOutgoingNoWeight(idMap, sort);
             }
@@ -152,7 +152,7 @@ final class RelationshipImporter extends StatementAction {
         if (loadIncoming) {
             final VisitRelationship visitor;
             if (shouldLoadWeights) {
-                visitor = new VisitIncomingWithWeight(readOp, cursors, idMap, sort, (WeightMap) this.relWeights);
+                visitor = new VisitIncomingWithWeight(readOp, cursors, idMap, sort, relWeightId, setup.relationDefaultWeight);
             } else {
                 visitor = new VisitIncomingNoWeight(idMap, sort);
             }
@@ -175,14 +175,15 @@ final class RelationshipImporter extends StatementAction {
             final CursorFactory cursors) {
         final VisitRelationship visitorIn;
         final VisitRelationship visitorOut;
-        if (relWeights instanceof WeightMap) {
+        if (relWeightId != NO_SUCH_PROPERTY_KEY) {
             visitorIn = new VisitIncomingNoWeight(idMap, true);
             visitorOut = new VisitUndirectedOutgoingWithWeight(
                     readOp,
                     cursors,
                     idMap,
                     true,
-                    (WeightMap) this.relWeights);
+                    relWeightId,
+                    setup.relationDefaultWeight);
         } else {
             visitorIn = new VisitIncomingNoWeight(idMap, true);
             visitorOut = new VisitOutgoingNoWeight(idMap, true);
@@ -195,13 +196,10 @@ final class RelationshipImporter extends StatementAction {
         return new HeavyGraph(
                 idMap,
                 matrix,
-                relWeights,
                 nodeProperties);
     }
 
-    void writeInto(WeightMapping relWeights, Map<String, WeightMapping> nodeProperties) {
-        combineMaps(relWeights, this.relWeights);
-
+    void writeInto(Map<String, WeightMapping> nodeProperties) {
         for (Map.Entry<String, WeightMapping> entry : this.nodeProperties.entrySet()) {
             combineMaps(nodeProperties.get(entry.getKey()), entry.getValue());
         }
@@ -210,7 +208,6 @@ final class RelationshipImporter extends StatementAction {
     void release() {
         this.idMap = null;
         this.matrix = null;
-        this.relWeights = null;
         this.nodeProperties = null;
     }
 
