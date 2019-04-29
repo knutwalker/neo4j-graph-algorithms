@@ -131,7 +131,7 @@ public final class HugeLouvainGraph implements HugeGraph {
 
     @Override
     public void forEachRelationship(long nodeId, Direction direction, HugeWeightedRelationshipConsumer consumer) {
-        throw new UnsupportedOperationException("forEachRelationship is not supported.");
+        graph.forEach(nodeId, (s, t) -> consumer.accept(s, t, weights.getOrDefault(s, t)));
     }
 
     @Override

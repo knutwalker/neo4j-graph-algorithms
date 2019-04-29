@@ -30,6 +30,7 @@ import org.neo4j.graphalgo.core.utils.TerminationFlag;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphalgo.core.write.Exporter;
 import org.neo4j.graphalgo.core.write.Translators;
+import org.neo4j.graphdb.Direction;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -196,18 +197,17 @@ public final class Louvain extends LouvainAlgo<Louvain> {
             // map node nodeId to community nodeId
             final int sourceCommunity = communityIds[i];
             // get transitions from current node
-            graph.forEachOutgoing(i, (s, t, r) -> {
+            graph.forEachRelationship(i, Direction.OUTGOING, (s, t, r, w) -> {
                 // mapping
                 final int targetCommunity = communityIds[t];
-                final double value = graph.weightOf(s, t);
                 if (sourceCommunity == targetCommunity) {
-                    nodeWeights[sourceCommunity] += value;
+                    nodeWeights[sourceCommunity] += w;
                 }
                 // add IN and OUT relation
                 putIfAbsent(relationships, targetCommunity).add(sourceCommunity);
                 putIfAbsent(relationships, sourceCommunity).add(targetCommunity);
-                relationshipWeights.addTo(RawValues.combineIntInt(sourceCommunity, targetCommunity), value / 2); // TODO validate
-                relationshipWeights.addTo(RawValues.combineIntInt(targetCommunity, sourceCommunity), value / 2);
+                relationshipWeights.addTo(RawValues.combineIntInt(sourceCommunity, targetCommunity), w / 2); // TODO validate
+                relationshipWeights.addTo(RawValues.combineIntInt(targetCommunity, sourceCommunity), w / 2);
                 return true;
             });
         }

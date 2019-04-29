@@ -19,10 +19,7 @@
 package org.neo4j.graphalgo.impl;
 
 import org.neo4j.collection.primitive.PrimitiveIntIterator;
-import org.neo4j.graphalgo.api.Graph;
-import org.neo4j.graphalgo.api.NodeProperties;
-import org.neo4j.graphalgo.api.RelationshipConsumer;
-import org.neo4j.graphalgo.api.WeightMapping;
+import org.neo4j.graphalgo.api.*;
 import org.neo4j.graphalgo.core.utils.ProgressLogger;
 import org.neo4j.graphalgo.core.utils.RandomIntIterable;
 import org.neo4j.graphalgo.core.utils.RandomLongIterable;
@@ -129,7 +126,7 @@ public final class LabelPropagation extends BaseLabelPropagation<Graph, WeightMa
         }
     }
 
-    private static final class ComputeStep extends Computation implements RelationshipConsumer {
+    private static final class ComputeStep extends Computation implements WeightedRelationshipConsumer {
 
         private final Graph graph;
         private final Direction direction;
@@ -162,8 +159,7 @@ public final class LabelPropagation extends BaseLabelPropagation<Graph, WeightMa
         }
 
         @Override
-        double weightOf(final long nodeId, final long candidate) {
-            double relationshipWeight = graph.weightOf((int) nodeId, (int) candidate);
+        double weightOf(final long nodeId, final long candidate, final double relationshipWeight) {
             double nodeWeight = nodeWeights.get((int) candidate);
             return relationshipWeight * nodeWeight;
         }
@@ -172,8 +168,9 @@ public final class LabelPropagation extends BaseLabelPropagation<Graph, WeightMa
         public boolean accept(
                 final int sourceNodeId,
                 final int targetNodeId,
-                final long relationId) {
-            castVote((long) sourceNodeId, (long) targetNodeId);
+                final long relationId,
+                final double weight) {
+            castVote((long) sourceNodeId, (long) targetNodeId, weight);
             return true;
         }
     }

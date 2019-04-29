@@ -19,12 +19,7 @@
 package org.neo4j.graphalgo.impl;
 
 import org.neo4j.collection.primitive.PrimitiveLongIterator;
-import org.neo4j.graphalgo.api.HugeGraph;
-import org.neo4j.graphalgo.api.HugeNodeProperties;
-import org.neo4j.graphalgo.api.HugeRelationshipConsumer;
-import org.neo4j.graphalgo.api.HugeRelationshipIterator;
-import org.neo4j.graphalgo.api.HugeRelationshipWeights;
-import org.neo4j.graphalgo.api.HugeWeightMapping;
+import org.neo4j.graphalgo.api.*;
 import org.neo4j.graphalgo.core.utils.ProgressLogger;
 import org.neo4j.graphalgo.core.utils.RandomLongIterable;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
@@ -75,7 +70,6 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
                 labels,
                 nodes,
                 localGraphs,
-                graph,
                 nodeWeights,
                 progressLogger,
                 direction,
@@ -90,7 +84,6 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
         private final Labels existingLabels;
         private final RandomLongIterable nodes;
         private final ThreadLocal<HugeRelationshipIterator> graph;
-        private final HugeRelationshipWeights relationshipWeights;
         private final HugeWeightMapping nodeWeights;
         private final ProgressLogger progressLogger;
         private final Direction direction;
@@ -102,7 +95,6 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
                 Labels existingLabels,
                 RandomLongIterable nodes,
                 ThreadLocal<HugeRelationshipIterator> graph,
-                HugeRelationshipWeights relationshipWeights,
                 HugeWeightMapping nodeWeights,
                 ProgressLogger progressLogger,
                 Direction direction,
@@ -112,7 +104,6 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
             this.existingLabels = existingLabels;
             this.nodes = nodes;
             this.graph = graph;
-            this.relationshipWeights = relationshipWeights;
             this.nodeWeights = nodeWeights;
             this.progressLogger = progressLogger;
             this.direction = direction;
@@ -134,7 +125,6 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
         Computation computeStep() {
             return new ComputeStep(
                     graph,
-                    relationshipWeights,
                     nodeWeights,
                     progressLogger,
                     direction,
@@ -146,10 +136,9 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
         }
     }
 
-    private static final class ComputeStep extends Computation implements HugeRelationshipConsumer {
+    private static final class ComputeStep extends Computation implements HugeWeightedRelationshipConsumer {
 
         private final ThreadLocal<HugeRelationshipIterator> graphs;
-        private final HugeRelationshipWeights relationshipWeights;
         private final HugeWeightMapping nodeWeights;
         private final Direction direction;
         private final RandomLongIterable nodes;
@@ -157,7 +146,6 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
 
         private ComputeStep(
                 ThreadLocal<HugeRelationshipIterator> graphs,
-                HugeRelationshipWeights relationshipWeights,
                 HugeWeightMapping nodeWeights,
                 ProgressLogger progressLogger,
                 Direction direction,
@@ -167,7 +155,6 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
                 RandomProvider random) {
             super(existingLabels, progressLogger, maxNode, random);
             this.graphs = graphs;
-            this.relationshipWeights = relationshipWeights;
             this.nodeWeights = nodeWeights;
             this.direction = direction;
             this.nodes = nodes;
@@ -185,15 +172,14 @@ public final class HugeLabelPropagation extends BaseLabelPropagation<HugeGraph, 
         }
 
         @Override
-        double weightOf(final long nodeId, final long candidate) {
-            double relationshipWeight = relationshipWeights.weightOf(nodeId, candidate);
+        double weightOf(final long nodeId, final long candidate, final double relationshipWeight) {
             double nodeWeight = nodeWeights.nodeWeight(candidate);
             return relationshipWeight * nodeWeight;
         }
 
         @Override
-        public boolean accept(final long sourceNodeId, final long targetNodeId) {
-            castVote(sourceNodeId, targetNodeId);
+        public boolean accept(final long sourceNodeId, final long targetNodeId, final double weight) {
+            castVote(sourceNodeId, targetNodeId, weight);
             return true;
         }
     }

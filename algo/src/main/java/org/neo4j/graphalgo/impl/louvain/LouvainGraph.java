@@ -133,7 +133,14 @@ public class LouvainGraph implements Graph {
 
     @Override
     public void forEachRelationship(int nodeId, Direction direction, WeightedRelationshipConsumer consumer) {
-        throw new UnsupportedOperationException("not implemented");
+        final IntContainer intCursors = graph.get(nodeId);
+        if (null == intCursors) {
+            return;
+        }
+        intCursors.forEach((IntProcedure) t -> {
+            double weight = weights.getOrDefault(RawValues.combineIntInt(nodeId, t), 0);
+            consumer.accept(nodeId, t, -1L, weight);
+        });
     }
 
     @Override

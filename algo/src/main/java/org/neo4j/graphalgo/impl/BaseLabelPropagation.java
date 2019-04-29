@@ -252,7 +252,7 @@ abstract class BaseLabelPropagation<
 
         abstract void forEach(long nodeId);
 
-        abstract double weightOf(long nodeId, long candidate);
+        abstract double weightOf(long nodeId, long candidate, double relationshipWeight);
 
         @Override
         public final void run() {
@@ -304,8 +304,8 @@ abstract class BaseLabelPropagation<
             return didChange;
         }
 
-        final void castVote(long nodeId, long candidate) {
-            double weight = weightOf(nodeId, candidate);
+        final void castVote(long nodeId, long candidate, double weight) {
+            weight = weightOf(nodeId, candidate, weight);
             long partition = existingLabels.labelFor(candidate);
             votes.addTo(partition, weight);
         }
