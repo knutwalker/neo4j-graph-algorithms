@@ -90,21 +90,52 @@ abstract class VisitRelationship {
     }
 
     final int flush() {
-        if (shouldSort) {
-            Arrays.sort(targets, 0, length);
-            length = checkDistinct(targets, length);
+        if (shouldSort && !isSorted) {
+            if (weights != null) {
+                int[] targets = this.targets;
+                int[] weights = this.weights;
+                int length = Math.min(this.length, Math.min(targets.length, weights.length));
+                // TODO: reuse and resize
+                // TODO: write into this array during import
+                //       though this here might actually benefit from vectorization
+                long[] targetsAndWeights = new long[length];
+                for (int i = 0; i < length; i++) {
+                    targetsAndWeights[i] = ((long) targets[i] << 32) | (long) weights[i] & 0xFFFFFFFFL;
+                }
+                // we need to sort only the targets but have to reorder the weights accordingly
+                // by putting them both into longs with the target id at the more significant position
+                // we can sort those longs and it will only sort by id and "drag along" the weights.
+                // This is done because there is no indirect sort option in j.u.Arrays and the
+                // IndirectSort provided by HPPC does allocate an (or possibly multiple) index array(s)
+                // and sorts by indirect lookup into the value array.
+                Arrays.sort(targetsAndWeights, 0, length);
+                int write = 0;
+                for (int i = 0, prev = -1; i < length; i++) {
+                    long targetAndWeight = targetsAndWeights[i];
+                    int target = (int) (targetAndWeight >> 32);
+                    if (target > prev) {
+                        weights[write] = (int) targetAndWeight;
+                        targets[write++] = target;
+                        prev = target;
+                    }
+                }
+                this.length = write;
+            } else {
+                Arrays.sort(targets, 0, length);
+                length = checkDistinct(targets, length);
+            }
         }
         return length;
     }
 
-    void visitWeight(
+    final void visitWeight(
             Read readOp,
             CursorFactory cursors,
             int propertyId,
             double defaultValue,
             long relationshipId,
             long propertyReference) {
-
+        assert weights != null : "loaded weight but no weight loading was specified at construction";
         try (PropertyCursor pc = cursors.allocatePropertyCursor()) {
             readOp.relationshipProperties(relationshipId, propertyReference, pc);
             double weight = ReadHelper.readProperty(pc, propertyId, defaultValue);
