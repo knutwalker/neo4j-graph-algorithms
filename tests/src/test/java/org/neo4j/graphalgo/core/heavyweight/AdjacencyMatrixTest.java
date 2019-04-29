@@ -49,10 +49,12 @@ public class AdjacencyMatrixTest {
         matrix = null;
     }
 
+    // TODO: add weight related tests
+
     @BeforeClass
     public static void setup() {
 
-        matrix = new AdjacencyMatrix(3, false, AllocationTracker.EMPTY);
+        matrix = new AdjacencyMatrix(3, false, 0d, false, AllocationTracker.EMPTY);
 
         // 0 -> {1, 2}
         matrix.armOut(0, 2);

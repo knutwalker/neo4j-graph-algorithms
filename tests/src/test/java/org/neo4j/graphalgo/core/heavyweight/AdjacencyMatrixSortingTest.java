@@ -18,9 +18,7 @@
  */
 package org.neo4j.graphalgo.core.heavyweight;
 
-import org.junit.AfterClass;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mockito;
@@ -30,10 +28,7 @@ import org.neo4j.graphalgo.core.utils.RawValues;
 import org.neo4j.graphalgo.core.utils.paged.AllocationTracker;
 import org.neo4j.graphdb.Direction;
 
-import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.*;
-import static org.neo4j.graphdb.Direction.INCOMING;
-import static org.neo4j.graphdb.Direction.OUTGOING;
 
 /**
  * @author mknobloch
@@ -51,7 +46,7 @@ public class AdjacencyMatrixSortingTest {
 
     @Test
     public void sortOutgoing() throws Exception {
-        AdjacencyMatrix matrix = new AdjacencyMatrix(3, false, AllocationTracker.EMPTY);
+        AdjacencyMatrix matrix = new AdjacencyMatrix(3, false, 0d, false, AllocationTracker.EMPTY);
         matrix.addOutgoing(0, 1);
         matrix.addOutgoing(0, 2);
 
@@ -65,7 +60,7 @@ public class AdjacencyMatrixSortingTest {
 
     @Test
     public void sortIncoming() throws Exception {
-        AdjacencyMatrix matrix = new AdjacencyMatrix(3, false, AllocationTracker.EMPTY);
+        AdjacencyMatrix matrix = new AdjacencyMatrix(3, false, 0d, false, AllocationTracker.EMPTY);
         matrix.addIncoming(1, 0);
         matrix.addIncoming(2, 0);
 
