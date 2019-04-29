@@ -176,8 +176,14 @@ final class RelationshipImporter extends StatementAction {
         final VisitRelationship visitorIn;
         final VisitRelationship visitorOut;
         if (relWeightId != NO_SUCH_PROPERTY_KEY) {
-            visitorIn = new VisitIncomingNoWeight(idMap, true);
-            visitorOut = new VisitUndirectedOutgoingWithWeight(
+            visitorIn = new VisitIncomingWithWeight(
+                    readOp,
+                    cursors,
+                    idMap,
+                    true,
+                    relWeightId,
+                    setup.relationDefaultWeight);
+            visitorOut = new VisitOutgoingWithWeight(
                     readOp,
                     cursors,
                     idMap,

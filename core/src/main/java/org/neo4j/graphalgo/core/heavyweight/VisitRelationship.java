@@ -39,8 +39,8 @@ abstract class VisitRelationship {
     private long prevNode;
     private boolean isSorted;
 
-    int prevTarget;
-    int sourceGraphId;
+    private int prevTarget;
+    private int sourceGraphId;
 
     VisitRelationship(final IdMap idMap, final boolean shouldSort) {
         this.idMap = idMap;
@@ -215,36 +215,6 @@ final class VisitIncomingWithWeight extends VisitRelationship {
     @Override
     void visit(final RelationshipSelectionCursor cursor) {
         if (addNode(cursor.sourceNodeReference())) {
-            visitWeight(readOp, cursors, propertyId, defaultValue, cursor.relationshipReference(), cursor.propertiesReference());
-        }
-    }
-}
-
-final class VisitUndirectedOutgoingWithWeight extends VisitRelationship {
-
-    private final Read readOp;
-    private final CursorFactory cursors;
-    private final double defaultValue;
-    private final int propertyId;
-
-    VisitUndirectedOutgoingWithWeight(
-            final Read readOp,
-            final CursorFactory cursors,
-            final IdMap idMap,
-            final boolean shouldSort,
-            final int propertyId,
-            final double defaultValue) {
-        super(idMap, shouldSort);
-        this.readOp = readOp;
-        this.cursors = cursors;
-        this.defaultValue = defaultValue;
-        this.propertyId = propertyId;
-    }
-
-    @Override
-    void visit(final RelationshipSelectionCursor cursor) {
-        if (addNode(cursor.targetNodeReference())) {
-            // TODO: undirected
             visitWeight(readOp, cursors, propertyId, defaultValue, cursor.relationshipReference(), cursor.propertiesReference());
         }
     }
