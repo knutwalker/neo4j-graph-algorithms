@@ -19,6 +19,7 @@
 package org.neo4j.graphalgo.bench;
 
 import org.neo4j.graphalgo.LabelPropagationProc;
+import org.neo4j.graphalgo.PropertyMapping;
 import org.neo4j.graphalgo.core.GraphLoader;
 import org.neo4j.graphalgo.core.heavyweight.HeavyGraph;
 import org.neo4j.graphalgo.core.heavyweight.HeavyGraphFactory;
@@ -48,6 +49,9 @@ import org.openjdk.jmh.annotations.Warmup;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+
+import static org.neo4j.graphalgo.impl.LabelPropagationAlgorithm.PARTITION_TYPE;
+import static org.neo4j.graphalgo.impl.LabelPropagationAlgorithm.WEIGHT_TYPE;
 
 /**
  * @author mknobloch
@@ -82,8 +86,10 @@ public class LabelPropagationBenchmarkLdbc {
                 .withAnyLabel()
                 .withAnyRelationshipType()
                 .withRelationshipWeightsFromProperty("weight", 1.0d)
-                .withOptionalNodeWeightsFromProperty("weight", 1.0d)
-                .withOptionalNodeProperty("partition", 0.0d)
+                .withOptionalNodeProperties(
+                        PropertyMapping.of(WEIGHT_TYPE, WEIGHT_TYPE, 1.0),
+                        PropertyMapping.of(PARTITION_TYPE, PARTITION_TYPE, 0.0)
+                )
                 .withExecutorService(Pools.DEFAULT)
                 .load(HeavyGraphFactory.class);
     }
