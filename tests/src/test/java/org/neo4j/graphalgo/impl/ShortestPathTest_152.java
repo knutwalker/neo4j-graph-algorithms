@@ -125,9 +125,8 @@ public class ShortestPathTest_152 {
         // see https://github.com/neo4j-contrib/neo4j-graph-algorithms/issues/722 and fix test afterwards
         verify(mock, times(1)).accept(eq(0.0));
         verify(mock, times(1)).accept(eq(50.0));
-        verify(mock, times(1)).accept(eq(90.0));
-        verify(mock, times(1)).accept(eq(120.0));
-        verify(mock, times(1)).accept(eq(140.0));
+        verify(mock, times(1)).accept(eq(80.0));
+        verify(mock, times(1)).accept(eq(100.0));
     }
 
     @Test
